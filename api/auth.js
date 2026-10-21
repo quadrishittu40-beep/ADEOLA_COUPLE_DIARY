@@ -10,6 +10,41 @@ module.exports = async function (req, res) {
 
     if (action === 'logout') { L.setSession(res, null); return L.json(res, 200, { ok: true }); }
 
+    if (action === 'changepw' || action === 'resetpartner') {
+      const s = L.session(req);
+      if (!s) return L.json(res, 401, { error: 'Log in first.' });
+      const np = String(b.newPassword || '');
+      if (np.length < 8) return L.json(res, 400, { error: 'Use a new password of at least 8 characters.' });
+      if (np.length > 200) return L.json(res, 400, { error: 'That password is too long.' });
+      let target;
+      if (action === 'changepw') {
+        target = await L.store.readJson('users/' + s.id + '.json');
+        if (!target) return L.json(res, 401, { error: 'Log in again.' });
+        const got = L.hashPw(String(b.currentPassword || ''), target.salt);
+        if (got.length !== target.hash.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(target.hash))) {
+          await new Promise((r) => setTimeout(r, 600));
+          return L.json(res, 403, { error: 'Your current password is not right.' });
+        }
+      } else {
+        const me = await L.store.readJson('users/' + s.id + '.json');
+        if (!me) return L.json(res, 401, { error: 'Log in again.' });
+        const users = await L.allUsers();
+        target = users.find((u) => u.id !== s.id);
+        if (!target) return L.json(res, 404, { error: 'Your partner has not created an account yet.' });
+        const got = L.hashPw(String(b.currentPassword || ''), me.salt);
+        if (got.length !== me.hash.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(me.hash))) {
+          await new Promise((r) => setTimeout(r, 600));
+          return L.json(res, 403, { error: 'Confirm with your own password. It is not right.' });
+        }
+      }
+      const salt = crypto.randomBytes(16).toString('hex');
+      target.salt = salt;
+      target.hash = L.hashPw(np, salt);
+      target.pwChanged = Date.now();
+      await L.store.writeJson('users/' + target.id + '.json', target);
+      return L.json(res, 200, { ok: true, who: target.who });
+    }
+
     const email = String(b.email || '').trim().toLowerCase();
     const password = String(b.password || '');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return L.json(res, 400, { error: 'Enter a valid email address.' });
