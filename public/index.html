@@ -260,8 +260,8 @@ function renderGate(){
   el.innerHTML=h;
 }
 function renderTabs(){
-  var L={week:'Week',month:'Month',year:'Year',gallery:'Photos'};
-  $('tabs').innerHTML=['week','month','year','gallery'].map(function(v){
+  var L={week:'Week',month:'Month',year:'Year',gallery:'Photos',account:'Account'};
+  $('tabs').innerHTML=['week','month','year','gallery','account'].map(function(v){
     return '<button role="tab" class="tab" aria-selected="'+(S.view===v)+'" data-act="tab" data-v="'+v+'">'+L[v]+'</button>';
   }).join('');
 }
@@ -432,6 +432,47 @@ function renderGallery(){
 function openPhoto(i){var im=$('lbi');im.src='img/'+PHOTOS[i][0]+'.jpg';im.alt=PHOTOS[i][1];$('lb').hidden=false}
 function closePhoto(){$('lb').hidden=true;$('lbi').removeAttribute('src')}
 
+/* ---------- account and export ---------- */
+function field(id,label,type,auto){return '<div><label class="label" for="'+id+'">'+label+'</label><input type="'+type+'" id="'+id+'" autocomplete="'+auto+'" style="width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit;font-size:16px"></div>'}
+function renderAccount(){
+  var other=S.me==='quadri'?PEOPLE.olamide:PEOPLE.quadri;
+  var h='<section><div class="fileline"><span class="mono">Account</span></div><h2>Your account</h2><p class="sub">Signed in as '+esc(PEOPLE[S.me].full)+'.</p></section><div class="spread">';
+  h+='<form class="leaf" id="pwform" novalidate><h3>Change my password</h3>'+field('pw-cur','Current password','password','current-password')+field('pw-new','New password (8 or more characters)','password','new-password')+'<div><button class="btn primary" type="submit">Change password</button></div><p class="sealnote" id="pwmsg" role="status"></p></form>';
+  h+='<form class="leaf" id="rsform" novalidate><h3>Set a new password for '+other.short+'</h3><p class="sealnote">Use this if '+other.short+' forgot their password. Confirm with your own password.</p>'+field('rs-cur','Your password','password','current-password')+field('rs-new',other.short+'\u2019s new password','password','off')+'<div><button class="btn primary" type="submit">Set their password</button></div><p class="sealnote" id="rsmsg" role="status"></p></form>';
+  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves every page written in a year as a text file you can keep or print. Both of your pages are included.</p><div class="navbtns"><button class="btn" data-act="export" data-kind="year">Download '+S.y+'</button><button class="btn" data-act="export" data-kind="month">Download '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
+  $('view').innerHTML=h;
+}
+async function accountCall(action,cur,np,msgId){
+  var el=$(msgId);el.textContent='Please wait\u2026';
+  try{
+    var r=await api('POST','/api/auth',{action:action,currentPassword:cur,newPassword:np});
+    el.textContent=r.ok?'Done. The new password works from now on.':(r.data&&r.data.error||'Could not change it.');
+    if(r.ok){['pw-cur','pw-new','rs-cur','rs-new'].forEach(function(i){var x=$(i);if(x)x.value=''})}
+  }catch(e){el.textContent='No connection. Try again when you are online.'}
+}
+function exportDiary(kind){
+  var rows=Object.keys(S.entries).map(function(k){return S.entries[k]}).filter(written).filter(function(e){
+    var p=parts(e.date);return p.y===S.y&&(kind==='year'||p.m===S.m);
+  }).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:(a.who<b.who?-1:1)});
+  var el=$('exmsg');
+  if(!rows.length){el.textContent='No pages written in that period yet.';return}
+  var out='QUADRI AND OLAMIDE DIARY\n'+(kind==='year'?S.y:MONTHS[S.m-1]+' '+S.y)+'\n\n',last='';
+  rows.forEach(function(e){
+    if(e.date!==last){var p=parts(e.date);out+='==== '+dayName(p.y,p.m,p.d)+' '+p.d+' '+MONTHS[p.m-1]+' '+p.y+' ====\n\n';last=e.date}
+    out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
+    if((e.text||'').trim())out+=e.text.trim()+'\n';
+    if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
+    out+='\n';
+  });
+  var name='diary-'+(kind==='year'?S.y:S.y+'-'+pad(S.m))+'.txt';
+  try{
+    var blob=new Blob([out],{type:'text/plain;charset=utf-8'}),u=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(u)},4000);
+    el.textContent='Saved '+rows.length+' pages to '+name+'.';
+  }catch(e){el.textContent='Could not save the file on this device.'}
+}
+
 /* ---------- view control ---------- */
 function updateView(){
   renderToday();renderWho();renderGate();renderTabs();
@@ -440,7 +481,7 @@ function updateView(){
     updateWeek();
   }else{
     S.shell=S.view;
-    if(S.view==='month')renderMonth(); else if(S.view==='gallery')renderGallery(); else renderYear();
+    if(S.view==='month')renderMonth(); else if(S.view==='gallery')renderGallery(); else if(S.view==='account'){if(!$('pwform'))renderAccount()} else renderYear();
   }
 }
 function ensureYear(force){
@@ -614,6 +655,7 @@ document.addEventListener('click',function(ev){
   else if(a==='nextYear'){setView('year',{y:S.y+1})}
   else if(a==='photo'){openPhoto(+b.dataset.i)}
   else if(a==='logout'){logout()}
+  else if(a==='export'){exportDiary(b.dataset.kind)}
   else if(a==='authmode'){S.authMode=S.authMode==='login'?'register':'login';S.authErr='';renderGate()}
   else if(a==='pickwho'){S.pickWho=b.dataset.who;renderGate()}
   else if(a==='mood'){
@@ -623,7 +665,12 @@ document.addEventListener('click',function(ev){
     onEdit();
   }
 });
-document.addEventListener('submit',function(ev){if(ev.target&&ev.target.id==='authform'){ev.preventDefault();submitAuth()}});
+document.addEventListener('submit',function(ev){
+  var id=ev.target&&ev.target.id;
+  if(id==='authform'){ev.preventDefault();submitAuth()}
+  else if(id==='pwform'){ev.preventDefault();accountCall('changepw',$('pw-cur').value,$('pw-new').value,'pwmsg')}
+  else if(id==='rsform'){ev.preventDefault();accountCall('resetpartner',$('rs-cur').value,$('rs-new').value,'rsmsg')}
+});
 document.addEventListener('input',function(ev){
   var id=ev.target&&ev.target.id;
   if(id==='f-text'||id==='f-win')onEdit();
