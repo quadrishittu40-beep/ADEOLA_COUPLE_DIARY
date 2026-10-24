@@ -439,8 +439,67 @@ function renderAccount(){
   var h='<section><div class="fileline"><span class="mono">Account</span></div><h2>Your account</h2><p class="sub">Signed in as '+esc(PEOPLE[S.me].full)+'.</p></section><div class="spread">';
   h+='<form class="leaf" id="pwform" novalidate><h3>Change my password</h3>'+field('pw-cur','Current password','password','current-password')+field('pw-new','New password (8 or more characters)','password','new-password')+'<div><button class="btn primary" type="submit">Change password</button></div><p class="sealnote" id="pwmsg" role="status"></p></form>';
   h+='<form class="leaf" id="rsform" novalidate><h3>Set a new password for '+other.short+'</h3><p class="sealnote">Use this if '+other.short+' forgot their password. Confirm with your own password.</p>'+field('rs-cur','Your password','password','current-password')+field('rs-new',other.short+'\u2019s new password','password','off')+'<div><button class="btn primary" type="submit">Set their password</button></div><p class="sealnote" id="rsmsg" role="status"></p></form>';
-  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves every page written in a year as a text file you can keep or print. Both of your pages are included.</p><div class="navbtns"><button class="btn" data-act="export" data-kind="year">Download '+S.y+'</button><button class="btn" data-act="export" data-kind="month">Download '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
+  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves the pages written in a year or a month as a PDF to keep or print, or as a plain text file. Both of your pages are included.</p><div class="navbtns"><button class="btn primary" data-act="export" data-kind="year" data-fmt="pdf">PDF: '+S.y+'</button><button class="btn primary" data-act="export" data-kind="month" data-fmt="pdf">PDF: '+MONTHS[S.m-1]+' '+S.y+'</button></div><div class="navbtns" style="margin-top:8px"><button class="btn" data-act="export" data-kind="year" data-fmt="txt">Text: '+S.y+'</button><button class="btn" data-act="export" data-kind="month" data-fmt="txt">Text: '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
+  h+='<section class="wins"><h3>Daily reminder</h3><p class="sub">A notification around 8 pm Lagos time, sent only if you have not written that day\u2019s page.</p><div class="navbtns" id="pushbtns"></div><p class="sealnote" id="pushmsg" role="status"></p></section>';
   $('view').innerHTML=h;
+  pushUi();
+}
+function b64ToU8(s){var p='='.repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,'+').replace(/_/g,'/'),r=atob(b),o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o}
+var PUSHKEY=null;
+async function pushState(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))return {st:'unsupported'};
+  if(Notification.permission==='denied')return {st:'denied'};
+  try{
+    var reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
+    return {st:sub?'on':'off',reg:reg,sub:sub};
+  }catch(e){return {st:'unsupported'}}
+}
+async function pushUi(){
+  var box=$('pushbtns'),msg=$('pushmsg');if(!box)return;
+  var s=await pushState();if(!$('pushbtns'))return;
+  if(s.st==='unsupported'){
+    box.innerHTML='';
+    msg.textContent='This browser cannot show reminders. On an iPhone, add the diary to your Home Screen first and open it from there. On Android, use Chrome.';
+  }else if(s.st==='denied'){
+    box.innerHTML='';
+    msg.textContent='Notifications are blocked for this app. Allow them in your phone\u2019s site or app settings, then come back.';
+  }else if(s.st==='on'){
+    box.innerHTML='<button class="btn" data-act="pushtest">Send a test reminder</button><button class="btn" data-act="pushoff">Turn reminders off</button>';
+    if(!msg.textContent)msg.textContent='Reminders are on for this device.';
+  }else{
+    box.innerHTML='<button class="btn primary" data-act="pushon">Turn on reminders</button>';
+    if(!msg.textContent)msg.textContent='';
+  }
+}
+async function pushOn(){
+  var msg=$('pushmsg');msg.textContent='Please wait\u2026';
+  try{
+    var r=await api('GET','/api/push');
+    if(!r.ok||!r.data.key){msg.textContent='Reminders are not set up on the server yet.';return}
+    var perm=await Notification.requestPermission();
+    if(perm!=='granted'){msg.textContent='Notifications were not allowed.';pushUi();return}
+    var reg=await navigator.serviceWorker.ready;
+    var sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(r.data.key)});
+    var j=sub.toJSON();
+    var s=await api('POST','/api/push',{action:'subscribe',sub:{endpoint:j.endpoint}});
+    msg.textContent=s.ok?'Reminders are on for this device.':(s.data&&s.data.error||'Could not turn reminders on.');
+  }catch(e){msg.textContent='Could not turn reminders on. Check your connection and try again.'}
+  pushUi();
+}
+async function pushOff(){
+  var msg=$('pushmsg');msg.textContent='Please wait\u2026';
+  try{
+    var reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
+    if(sub){await api('POST','/api/push',{action:'unsubscribe',endpoint:sub.endpoint});await sub.unsubscribe()}
+    msg.textContent='Reminders are off for this device.';
+  }catch(e){msg.textContent='Could not turn reminders off.'}
+  pushUi();
+}
+async function pushTest(){
+  var msg=$('pushmsg');msg.textContent='Sending\u2026';
+  try{var r=await api('POST','/api/push',{action:'test'});msg.textContent=r.ok?'Sent. It should arrive in a few seconds.':(r.data&&r.data.error||'Could not send.')}
+  catch(e){msg.textContent='No connection. Try again when you are online.'}
 }
 async function accountCall(action,cur,np,msgId){
   var el=$(msgId);el.textContent='Please wait\u2026';
@@ -450,27 +509,119 @@ async function accountCall(action,cur,np,msgId){
     if(r.ok){['pw-cur','pw-new','rs-cur','rs-new'].forEach(function(i){var x=$(i);if(x)x.value=''})}
   }catch(e){el.textContent='No connection. Try again when you are online.'}
 }
-function exportDiary(kind){
-  var rows=Object.keys(S.entries).map(function(k){return S.entries[k]}).filter(written).filter(function(e){
+function saveFile(blob,name){
+  var u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(u)},4000);
+}
+function exportRows(kind){
+  return Object.keys(S.entries).map(function(k){return S.entries[k]}).filter(written).filter(function(e){
     var p=parts(e.date);return p.y===S.y&&(kind==='year'||p.m===S.m);
   }).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:(a.who<b.who?-1:1)});
-  var el=$('exmsg');
+}
+async function exportDiary(kind,fmt){
+  var rows=exportRows(kind),el=$('exmsg');
+  var period=kind==='year'?String(S.y):MONTHS[S.m-1]+' '+S.y;
+  var base='diary-'+(kind==='year'?S.y:S.y+'-'+pad(S.m));
   if(!rows.length){el.textContent='No pages written in that period yet.';return}
-  var out='QUADRI AND OLAMIDE DIARY\n'+(kind==='year'?S.y:MONTHS[S.m-1]+' '+S.y)+'\n\n',last='';
-  rows.forEach(function(e){
-    if(e.date!==last){var p=parts(e.date);out+='==== '+dayName(p.y,p.m,p.d)+' '+p.d+' '+MONTHS[p.m-1]+' '+p.y+' ====\n\n';last=e.date}
-    out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
-    if((e.text||'').trim())out+=e.text.trim()+'\n';
-    if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
-    out+='\n';
-  });
-  var name='diary-'+(kind==='year'?S.y:S.y+'-'+pad(S.m))+'.txt';
   try{
-    var blob=new Blob([out],{type:'text/plain;charset=utf-8'}),u=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
-    setTimeout(function(){URL.revokeObjectURL(u)},4000);
-    el.textContent='Saved '+rows.length+' pages to '+name+'.';
+    if(fmt==='pdf'){
+      el.textContent='Making the PDF…';
+      await new Promise(function(r){setTimeout(r,30)});
+      var bytes=await makePdf(rows,period);
+      saveFile(new Blob([bytes],{type:'application/pdf'}),base+'.pdf');
+      el.textContent='Saved '+rows.length+' pages to '+base+'.pdf.';
+    }else{
+      var out='QUADRI AND OLAMIDE DIARY\n'+period+'\n\n',last='';
+      rows.forEach(function(e){
+        if(e.date!==last){var p=parts(e.date);out+='==== '+dayName(p.y,p.m,p.d)+' '+p.d+' '+MONTHS[p.m-1]+' '+p.y+' ====\n\n';last=e.date}
+        out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
+        if((e.text||'').trim())out+=e.text.trim()+'\n';
+        if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
+        out+='\n';
+      });
+      saveFile(new Blob([out],{type:'text/plain;charset=utf-8'}),base+'.txt');
+      el.textContent='Saved '+rows.length+' pages to '+base+'.txt.';
+    }
   }catch(e){el.textContent='Could not save the file on this device.'}
+}
+
+/* PDF: pages are drawn on a canvas (so every script the phone can show works, including Arabic and
+   Yoruba letters) and packed into a plain PDF file, one JPEG per A4 page. */
+async function makePdf(rows,period){
+  var W=1190,H=1684,M=100,FONT='"Hanken Grotesk","Noto Sans","Segoe UI",Roboto,Arial,sans-serif';
+  var pages=[],cv=null,cx=null,y=0,textW=W-2*M;
+  function newPage(){
+    if(cv)pages.push(cv);
+    cv=document.createElement('canvas');cv.width=W;cv.height=H;cx=cv.getContext('2d');
+    cx.fillStyle='#ffffff';cx.fillRect(0,0,W,H);cx.textBaseline='alphabetic';y=M+30;
+  }
+  function need(hh){if(y+hh>H-M-20)newPage()}
+  function isRtl(s){return /[֐-ࣿיִ-ﻼ]/.test(s)}
+  function draw(line,font,color){
+    cx.font=font;cx.fillStyle=color;
+    var r=isRtl(line);cx.direction=r?'rtl':'ltr';cx.textAlign=r?'right':'left';
+    cx.fillText(line,r?W-M:M,y);
+  }
+  function wrap(text,font){
+    cx.font=font;var out=[];
+    String(text).split('\n').forEach(function(par){
+      if(!par.trim()){out.push('');return}
+      var line='';
+      par.split(/\s+/).forEach(function(w){
+        while(cx.measureText(w).width>textW){var n=w.length;while(n>1&&cx.measureText(w.slice(0,n)).width>textW)n--;if(line){out.push(line);line=''}out.push(w.slice(0,n));w=w.slice(n)}
+        var t=line?line+' '+w:w;
+        if(cx.measureText(t).width>textW&&line){out.push(line);line=w}else line=t;
+      });
+      out.push(line);
+    });
+    return out;
+  }
+  newPage();
+  draw('Quadri and Olamide Diary','700 58px '+FONT,'#12201a');y+=52;
+  draw(period,'400 34px '+FONT,'#5a6a62');y+=30;
+  cx.fillStyle='#d3dcd6';cx.fillRect(M,y,textW,3);y+=60;
+  var last='';
+  rows.forEach(function(e){
+    if(e.date!==last){
+      var p=parts(e.date);need(150);y+=24;
+      draw(dayName(p.y,p.m,p.d)+' '+p.d+' '+MONTHS[p.m-1]+' '+p.y,'700 38px '+FONT,'#12201a');y+=18;
+      cx.fillStyle='#d3dcd6';cx.fillRect(M,y,textW,2);y+=48;last=e.date;
+    }
+    need(120);
+    draw(PEOPLE[e.who].full+(e.mood?'  ·  '+e.mood:''),'700 29px '+FONT,e.who==='quadri'?'#0f6b45':'#2b54a6');y+=46;
+    if((e.text||'').trim())wrap(e.text.trim(),'400 31px '+FONT).forEach(function(l){need(46);if(l)draw(l,'400 31px '+FONT,'#12201a');y+=46});
+    if((e.win||'').trim()){y+=6;wrap('Win: '+e.win.trim(),'italic 400 29px '+FONT).forEach(function(l){need(44);if(l)draw(l,'italic 400 29px '+FONT,'#9a6a0c');y+=44})}
+    y+=34;
+  });
+  pages.push(cv);
+  pages.forEach(function(c,i){
+    var g=c.getContext('2d');g.direction='ltr';g.textAlign='center';g.font='400 24px '+FONT;g.fillStyle='#5a6a62';
+    g.fillText('Quadri and Olamide Diary  ·  '+period+'  ·  page '+(i+1)+' of '+pages.length,W/2,H-60);
+  });
+  var jpegs=pages.map(function(c){
+    var s=atob(c.toDataURL('image/jpeg',0.88).split(',')[1]),u=new Uint8Array(s.length);
+    for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;
+  });
+  var enc=new TextEncoder(),chunks=[],offs=[],len=0;
+  function push(x){var b=typeof x==='string'?enc.encode(x):x;chunks.push(b);len+=b.length}
+  function begin(n){offs[n]=len;push(n+' 0 obj\n')}
+  push('%PDF-1.4\n');
+  var kids=jpegs.map(function(_,i){return (3+i*3)+' 0 R'}).join(' ');
+  begin(1);push('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  begin(2);push('<< /Type /Pages /Kids ['+kids+'] /Count '+jpegs.length+' >>\nendobj\n');
+  jpegs.forEach(function(j,i){
+    var pg=3+i*3,ct=pg+1,im=pg+2,stream='q 595 0 0 842 0 0 cm /Im0 Do Q';
+    begin(pg);push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 '+im+' 0 R >> >> /Contents '+ct+' 0 R >>\nendobj\n');
+    begin(ct);push('<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream\nendobj\n');
+    begin(im);push('<< /Type /XObject /Subtype /Image /Width '+W+' /Height '+H+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+j.length+' >>\nstream\n');push(j);push('\nendstream\nendobj\n');
+  });
+  var total=3+jpegs.length*3,xref=len;
+  var x='xref\n0 '+total+'\n0000000000 65535 f \n';
+  for(var n=1;n<total;n++)x+=String(offs[n]).padStart(10,'0')+' 00000 n \n';
+  push(x+'trailer\n<< /Size '+total+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF');
+  var out=new Uint8Array(len),pos=0;chunks.forEach(function(c){out.set(c,pos);pos+=c.length});
+  return out;
 }
 
 /* ---------- view control ---------- */
@@ -655,7 +806,10 @@ document.addEventListener('click',function(ev){
   else if(a==='nextYear'){setView('year',{y:S.y+1})}
   else if(a==='photo'){openPhoto(+b.dataset.i)}
   else if(a==='logout'){logout()}
-  else if(a==='export'){exportDiary(b.dataset.kind)}
+  else if(a==='export'){exportDiary(b.dataset.kind,b.dataset.fmt)}
+  else if(a==='pushon'){pushOn()}
+  else if(a==='pushoff'){pushOff()}
+  else if(a==='pushtest'){pushTest()}
   else if(a==='authmode'){S.authMode=S.authMode==='login'?'register':'login';S.authErr='';renderGate()}
   else if(a==='pickwho'){S.pickWho=b.dataset.who;renderGate()}
   else if(a==='mood'){
