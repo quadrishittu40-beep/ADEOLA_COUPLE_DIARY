@@ -35,7 +35,9 @@ module.exports = async function (req, res) {
       const rec = { mood: mood, text: clip(b.text, 20000), win: clip(b.win, 200), updated: Date.now() };
       const file = 'entries/' + p.y + '/' + s.who + '/' + String(p.m).padStart(2, '0') + '.json';
       const cur = (await L.store.readJson(file)) || { days: {} };
-      const empty = !rec.mood && !rec.text.trim() && !rec.win.trim();
+      const prev = cur.days[b.date];
+      if (prev && Array.isArray(prev.media) && prev.media.length) rec.media = prev.media;
+      const empty = !rec.mood && !rec.text.trim() && !rec.win.trim() && !rec.media;
       if (empty) delete cur.days[b.date]; else cur.days[b.date] = rec;
       await L.store.writeJson(file, cur);
       return L.json(res, 200, { ok: true, entry: empty ? null : Object.assign({ date: b.date, who: s.who }, rec) });

@@ -14,7 +14,7 @@ module.exports = async function (req, res) {
     for (const who of WHO) {
       const month = await L.store.readJson('entries/' + p.y + '/' + who + '/' + String(p.m).padStart(2, '0') + '.json');
       const e = month && month.days && month.days[today];
-      if (e && ((e.text || '').trim() || (e.win || '').trim() || e.mood)) { report[who] = 'already wrote'; continue; }
+      if (e && ((e.text || '').trim() || (e.win || '').trim() || e.mood || (e.media && e.media.length))) { report[who] = 'already wrote'; continue; }
       const cur = (await L.store.readJson('push/' + who + '.json')) || { subs: [] };
       if (!cur.subs.length) { report[who] = 'no device'; continue; }
       const out = await Promise.all(cur.subs.map(P.sendPush));

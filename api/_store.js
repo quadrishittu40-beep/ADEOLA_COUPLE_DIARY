@@ -77,4 +77,53 @@ async function listPaths(prefix) {
   return out;
 }
 
-module.exports = { readJson, writeJson, listPaths };
+async function readBuffer(pathname) {
+  if (DIR) {
+    try { return fs.readFileSync(path.join(DIR, pathname)); } catch (e) { return null; }
+  }
+  const b = await blobLib();
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  try {
+    if (typeof b.get === 'function') {
+      const r = await b.get(pathname, { access: 'private', token });
+      if (!r || !r.stream) return null;
+      return Buffer.from(await new Response(r.stream).arrayBuffer());
+    }
+    const meta = await b.head(pathname, { token });
+    const res = await fetch(meta.downloadUrl || meta.url, { headers: { authorization: 'Bearer ' + token } });
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch (e) { return null; }
+}
+
+async function writeBuffer(pathname, buf, contentType) {
+  if (DIR) {
+    const f = path.join(DIR, pathname);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, buf);
+    return;
+  }
+  const b = await blobLib();
+  await b.put(pathname, buf, {
+    access: 'private', addRandomSuffix: false, allowOverwrite: true,
+    contentType: contentType || 'application/octet-stream', token: process.env.BLOB_READ_WRITE_TOKEN
+  });
+}
+
+async function removePrefix(prefix) {
+  if (DIR) {
+    const dir = path.join(DIR, prefix);
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+    return;
+  }
+  const b = await blobLib();
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  let cursor;
+  do {
+    const r = await b.list({ prefix, cursor, token });
+    if (r.blobs.length) await b.del(r.blobs.map((x) => x.url), { token });
+    cursor = r.hasMore ? r.cursor : undefined;
+  } while (cursor);
+}
+
+module.exports = { readJson, writeJson, listPaths, readBuffer, writeBuffer, removePrefix };
