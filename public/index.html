@@ -68,8 +68,8 @@ h1{font-family:var(--f-display);font-weight:700;font-size:clamp(30px,6vw,48px);l
 .gate{margin-top:20px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:12px}
 .gate p{margin:0;max-width:62ch}
 .gate .opts{display:flex;flex-wrap:wrap;gap:10px}
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:24px 0 20px}
-.tab{background:none;border:0;padding:10px 16px;cursor:pointer;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs{display:flex;overflow-x:auto;gap:2px;border-bottom:1px solid var(--line);margin:24px 0 20px}
+.tab{background:none;border:0;padding:10px 12px;white-space:nowrap;cursor:pointer;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
 .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
 .badge{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:4px;border:1px solid var(--ink);white-space:nowrap}
 .badge.sealed{background:var(--ink);color:var(--bg)}
@@ -151,6 +151,13 @@ textarea{min-height:230px;resize:vertical}
 .lb{position:fixed;inset:0;z-index:50;background:rgba(8,14,11,.92);display:flex;align-items:center;justify-content:center;padding:20px}
 .lb img{max-width:100%;max-height:100%;border-radius:10px;object-fit:contain}
 .lb button{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:max(14px,env(safe-area-inset-right,0px));background:#fff;color:#12201A;border:0;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.mi{position:relative;min-width:0;border-radius:10px;overflow:hidden;background:var(--line)}
+.mi.v{grid-column:span 2}
+.mi img,.mi video{display:block;width:100%;height:100%;aspect-ratio:1/1;object-fit:cover;cursor:zoom-in;background:#000}
+.mi.v video{aspect-ratio:16/9;object-fit:contain;cursor:auto}
+.mdel{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:6px;padding:4px 9px;font-size:13px;cursor:pointer}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
 @media (max-width:760px){
   .spread{grid-template-columns:minmax(0,1fr)}
   .row{grid-template-columns:minmax(0,1fr) auto}
@@ -207,7 +214,7 @@ var rng=function(y,m,w){return wS(w)+'–'+wE(y,m,w)+' '+MONTHS[m-1]};
 function span(s,e){var t=TODAY();return t<s?'upcoming':(t>e?'sealed':'open')}
 var weekSt=function(y,m,w){return span(iso(y,m,wS(w)),iso(y,m,wE(y,m,w)))};
 var monthSt=function(y,m){return span(iso(y,m,1),iso(y,m,dim(y,m)))};
-var written=function(e){return !!e&&!!(((e.text||'').trim())||((e.win||'').trim())||e.mood)};
+var written=function(e){return !!e&&!!(((e.text||'').trim())||((e.win||'').trim())||e.mood||(e.media&&e.media.length))};
 var badge=function(st){return '<span class="badge '+st+'">'+({open:'Open',sealed:'Sealed',upcoming:'Not yet open'}[st])+'</span>'};
 
 var S={view:'week',y:0,m:0,w:0,d:0,shell:null,dataYear:null,entries:{},me:null,taken:{},ready:false,authMode:'login',authBusy:false,authErr:'',online:true,loaded:false};
@@ -286,11 +293,13 @@ function leafHtml(who){
     h+='<div><span class="label">Mood</span><div class="chips">'+MOODS.map(function(md){return '<button class="chip'+(cur===md?' on':'')+'" data-act="mood" data-mood="'+md+'" aria-pressed="'+(cur===md)+'">'+md+'</button>'}).join('')+'</div></div>';
     h+='<div><label class="label" for="f-text">How the day went</label><textarea id="f-text" placeholder="Write today’s page here.">'+esc(e&&e.text)+'</textarea></div>';
     h+='<div><label class="label" for="f-win">Win of the day</label><input type="text" id="f-win" maxlength="200" placeholder="One thing you achieved or are proud of" value="'+esc(e&&e.win)+'"></div>';
+    h+=mediaBlock(e,true);
     h+='<div class="saved" id="saved"></div>';
   }else if(written(e)){
     if(e.mood)h+='<span class="moodtag">'+esc(e.mood)+'</span>';
     if((e.text||'').trim())h+='<p class="entry">'+esc(e.text)+'</p>';
     if((e.win||'').trim())h+='<div class="win"><span class="k">Win</span><span>'+esc(e.win)+'</span></div>';
+    h+=mediaBlock(e,false);
     if(sealed)h+='<div class="sealnote">Sealed with its week file. This page is kept as written.</div>';
   }else{
     if(sealed)h+='<p class="empty">No page was written for this day.</p>';
@@ -303,7 +312,7 @@ function skipLeaf(who){
   var date=iso(S.y,S.m,S.d),el=$('leaf-'+who),a=document.activeElement;
   if(!el)return false;
   if(timers[date]||inflight[date])return true;
-  return !!(a&&el.contains(a)&&a.matches('textarea,input'));
+  return !!(a&&el.contains(a)&&a.matches('textarea,input:not([type=file])'));
 }
 function updateWeek(){
   var y=S.y,m=S.m,w=S.w,st=weekSt(y,m,w),idx=buildIdx(),e=wE(y,m,w),n=e-wS(w)+1;
@@ -538,6 +547,7 @@ async function exportDiary(kind,fmt){
         out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
         if((e.text||'').trim())out+=e.text.trim()+'\n';
         if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
+        if(e.media&&e.media.length)out+='['+e.media.length+' photo/video attachment'+(e.media.length>1?'s':'')+' not included in this file]\n';
         out+='\n';
       });
       saveFile(new Blob([out],{type:'text/plain;charset=utf-8'}),base+'.txt');
@@ -686,6 +696,85 @@ function openWeek(y,m,w){
   setView('week',{y:y,m:m,w:w,d:d});
 }
 
+/* ---------- photos and videos ---------- */
+var MAXV=50*1024*1024,MAXI=10*1024*1024,OKMIME=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm'];
+function mediaBlock(e,editable){
+  var list=(e&&e.media)||[],h='';
+  if(list.length){
+    h+='<div class="mgrid">'+list.map(function(m){
+      var src='/api/media?id='+encodeURIComponent(m.id);
+      var del=editable?'<button type="button" class="mdel" data-act="mediadel" data-id="'+esc(m.id)+'" aria-label="Remove">Remove</button>':'';
+      if(m.type==='video')return '<div class="mi v"><video controls playsinline preload="metadata" src="'+src+'"></video>'+del+'</div>';
+      return '<div class="mi"><img loading="lazy" src="'+src+'" alt="'+esc(m.name||'Photo')+'" data-act="viewimg" data-src="'+src+'">'+del+'</div>';
+    }).join('')+'</div>';
+  }
+  if(editable){
+    h+='<div><input type="file" id="f-media" class="vh" accept="image/*,video/*" multiple><label class="btn" for="f-media" style="display:inline-block">Add photo or video</label> <span class="sealnote" id="mediamsg" role="status">'+esc(S.mediaMsg||'')+'</span></div>';
+  }
+  return h;
+}
+function refreshLeaf(){var a=document.activeElement;if(a&&a.blur&&a.matches&&a.matches('textarea,input'))a.blur();updateView()}
+function mediaSay(t){S.mediaMsg=t||'';var el=$('mediamsg');if(el)el.textContent=S.mediaMsg}
+function compressImage(file){
+  return new Promise(function(ok,fail){
+    var u=URL.createObjectURL(file),im=new Image();
+    im.onload=function(){
+      var s=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement('canvas');
+      c.width=Math.max(1,Math.round(im.width*s));c.height=Math.max(1,Math.round(im.height*s));
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      c.toBlob(function(b){URL.revokeObjectURL(u);b?ok(b):fail()},'image/jpeg',0.82);
+    };
+    im.onerror=function(){URL.revokeObjectURL(u);fail()};
+    im.src=u;
+  });
+}
+function waitSaved(date){
+  return new Promise(function(ok){
+    var n=0;(function chk(){if((!timers[date]&&!inflight[date])||n++>50)ok();else setTimeout(chk,100)})();
+  });
+}
+async function uploadFiles(files){
+  if(!S.me||!files||!files.length)return;
+  var date=iso(S.y,S.m,S.d),list=Array.prototype.slice.call(files);
+  for(var i=0;i<list.length;i++){
+    var f=list[i],blob=f,mime=f.type,tag='('+(i+1)+' of '+list.length+') ';
+    try{
+      if(/^image\//.test(mime)&&mime!=='image/gif'){
+        mediaSay(tag+'Preparing photo\u2026');
+        try{blob=await compressImage(f);mime='image/jpeg'}catch(e){blob=f}
+      }
+      if(OKMIME.indexOf(mime)<0){mediaSay('That file type is not supported. Use JPG, PNG, WebP, GIF, MP4, MOV or WebM.');continue}
+      var isV=/^video\//.test(mime);
+      if(blob.size>(isV?MAXV:MAXI)){mediaSay(isV?'That video is over 50 MB. Trim or compress it first.':'That photo is over 10 MB.');continue}
+      await waitSaved(date);
+      var r=await api('POST','/api/media?action=init',{date:date,mime:mime,size:blob.size,name:f.name||''});
+      if(!r.ok){mediaSay(r.data&&r.data.error||'Could not start the upload.');continue}
+      var id=r.data.id,CH=r.data.chunk,total=r.data.chunks;
+      for(var n=0;n<total;n++){
+        mediaSay(tag+'Uploading '+(isV?'video':'photo')+' '+Math.round(n/total*100)+'%');
+        var res=await fetch('/api/media?id='+id+'&n='+n,{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream'},body:blob.slice(n*CH,Math.min(blob.size,(n+1)*CH))});
+        if(!res.ok){var j={};try{j=await res.json()}catch(e){}throw new Error(j.error||'Upload failed')}
+      }
+      await waitSaved(date);
+      var d=await api('POST','/api/media?action=done&id='+id);
+      if(!d.ok){mediaSay(d.data&&d.data.error||'Could not finish the upload.');continue}
+      S.entries[date+'_'+S.me]=d.data.entry;
+      mediaSay('Added.');refreshLeaf();
+    }catch(e){mediaSay('Upload stopped. Check your connection and try again.')}
+  }
+}
+async function removeMedia(id){
+  var date=iso(S.y,S.m,S.d);
+  mediaSay('Removing\u2026');
+  try{
+    var r=await api('DELETE','/api/media?id='+encodeURIComponent(id));
+    if(!r.ok){mediaSay(r.data&&r.data.error||'Could not remove it.');return}
+    var key=date+'_'+S.me;
+    if(r.data.entry)S.entries[key]=r.data.entry;else delete S.entries[key];
+    mediaSay('Removed.');refreshLeaf();
+  }catch(e){mediaSay('No connection. Try again when you are online.')}
+}
+
 /* ---------- server calls ---------- */
 async function api(method,url,data){
   var opt={method:method,headers:{},credentials:'same-origin'};
@@ -713,7 +802,7 @@ function pendingLoad(){try{var o=JSON.parse(localStorage.getItem('diary-pending'
 function setSaved(t){var el=$('saved');if(el)el.textContent=t}
 function collect(){
   var date=iso(S.y,S.m,S.d),chip=document.querySelector('#leaf-'+S.me+' .chip.on');
-  return {date:date,who:S.me,mood:chip?chip.dataset.mood:'',text:$('f-text').value,win:$('f-win').value,pending:true};
+  return {date:date,who:S.me,mood:chip?chip.dataset.mood:'',text:$('f-text').value,win:$('f-win').value,media:(S.entries[date+'_'+S.me]||{}).media,pending:true};
 }
 function onEdit(){
   if(!S.me||!$('f-text'))return;
@@ -819,6 +908,8 @@ document.addEventListener('click',function(ev){
   else if(a==='nextYear'){setView('year',{y:S.y+1})}
   else if(a==='photo'){openPhoto(+b.dataset.i)}
   else if(a==='logout'){logout()}
+  else if(a==='mediadel'){removeMedia(b.dataset.id)}
+  else if(a==='viewimg'){var im=$('lbi');im.src=b.dataset.src;im.alt='Photo';$('lb').hidden=false}
   else if(a==='export'){exportDiary(b.dataset.kind,b.dataset.fmt)}
   else if(a==='pushon'){pushOn()}
   else if(a==='pushoff'){pushOff()}
@@ -837,6 +928,9 @@ document.addEventListener('submit',function(ev){
   if(id==='authform'){ev.preventDefault();submitAuth()}
   else if(id==='pwform'){ev.preventDefault();accountCall('changepw',$('pw-cur').value,$('pw-new').value,'pwmsg')}
   else if(id==='rsform'){ev.preventDefault();accountCall('resetpartner',$('rs-cur').value,$('rs-new').value,'rsmsg')}
+});
+document.addEventListener('change',function(ev){
+  if(ev.target&&ev.target.id==='f-media'){var fs=ev.target.files;uploadFiles(fs).then(function(){var x=$('f-media');if(x)x.value=''})}
 });
 document.addEventListener('input',function(ev){
   var id=ev.target&&ev.target.id;
