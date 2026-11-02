@@ -157,6 +157,7 @@ textarea{min-height:230px;resize:vertical}
 .mi img,.mi video{display:block;width:100%;height:100%;aspect-ratio:1/1;object-fit:cover;cursor:zoom-in;background:#000}
 .mi.v video{aspect-ratio:16/9;object-fit:contain;cursor:auto}
 .mdel{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:6px;padding:4px 9px;font-size:13px;cursor:pointer}
+.msave{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:6px;padding:4px 9px;font-size:13px;cursor:pointer}
 .vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
 @media (max-width:760px){
   .spread{grid-template-columns:minmax(0,1fr)}
@@ -448,7 +449,7 @@ function renderAccount(){
   var h='<section><div class="fileline"><span class="mono">Account</span></div><h2>Your account</h2><p class="sub">Signed in as '+esc(PEOPLE[S.me].full)+'.</p></section><div class="spread">';
   h+='<form class="leaf" id="pwform" novalidate><h3>Change my password</h3>'+field('pw-cur','Current password','password','current-password')+field('pw-new','New password (8 or more characters)','password','new-password')+'<div><button class="btn primary" type="submit">Change password</button></div><p class="sealnote" id="pwmsg" role="status"></p></form>';
   h+='<form class="leaf" id="rsform" novalidate><h3>Set a new password for '+other.short+'</h3><p class="sealnote">Use this if '+other.short+' forgot their password. Confirm with your own password.</p>'+field('rs-cur','Your password','password','current-password')+field('rs-new',other.short+'\u2019s new password','password','off')+'<div><button class="btn primary" type="submit">Set their password</button></div><p class="sealnote" id="rsmsg" role="status"></p></form>';
-  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves the pages written in a year or a month as a PDF to keep or print, or as a plain text file. Both of your pages are included.</p><div class="navbtns"><button class="btn primary" data-act="export" data-kind="year" data-fmt="pdf">PDF: '+S.y+'</button><button class="btn primary" data-act="export" data-kind="month" data-fmt="pdf">PDF: '+MONTHS[S.m-1]+' '+S.y+'</button></div><div class="navbtns" style="margin-top:8px"><button class="btn" data-act="export" data-kind="year" data-fmt="txt">Text: '+S.y+'</button><button class="btn" data-act="export" data-kind="month" data-fmt="txt">Text: '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
+  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves the pages written in a year or a month as a PDF to keep or print, or as a plain text file. Both of your pages are included.</p><div class="navbtns"><button class="btn primary" data-act="export" data-kind="year" data-fmt="pdf">PDF: '+S.y+'</button><button class="btn primary" data-act="export" data-kind="month" data-fmt="pdf">PDF: '+MONTHS[S.m-1]+' '+S.y+'</button></div><div class="navbtns" style="margin-top:8px"><button class="btn" data-act="export" data-kind="year" data-fmt="txt">Text: '+S.y+'</button><button class="btn" data-act="export" data-kind="month" data-fmt="txt">Text: '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sub" style="margin-top:16px">The PDF shows each photo and a still picture from each video. To keep the original photos and videos, download them as one ZIP file.</p><div class="navbtns"><button class="btn" data-act="mediazip" data-kind="year">Photos and videos ZIP: '+S.y+'</button><button class="btn" data-act="mediazip" data-kind="month">Photos and videos ZIP: '+MONTHS[S.m-1]+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
   h+='<section class="wins"><h3>Daily reminder</h3><p class="sub">A notification around 8 pm Lagos time, sent only if you have not written that day\u2019s page.</p><div class="navbtns" id="pushbtns"></div><p class="sealnote" id="pushmsg" role="status"></p></section>';
   $('view').innerHTML=h;
   pushUi();
@@ -547,7 +548,7 @@ async function exportDiary(kind,fmt){
         out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
         if((e.text||'').trim())out+=e.text.trim()+'\n';
         if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
-        if(e.media&&e.media.length)out+='['+e.media.length+' photo/video attachment'+(e.media.length>1?'s':'')+' not included in this file]\n';
+        if(e.media&&e.media.length)out+='Attachments: '+e.media.map(function(m,i){return mediaFileName(e,m,i,m.mime||'')}).join(', ')+' (download them with the Photos and videos ZIP)\n';
         out+='\n';
       });
       saveFile(new Blob([out],{type:'text/plain;charset=utf-8'}),base+'.txt');
@@ -599,7 +600,50 @@ async function makePdf(rows,period){
   }
   cx.fillStyle='#d3dcd6';cx.fillRect(M,y,textW,3);y+=60;
   var last='';
-  rows.forEach(function(e){
+  function placeBox(img,wpx,hpx,label,isVideo){
+    var maxW=textW,maxH=620,s=Math.min(maxW/wpx,maxH/hpx,2),w=Math.round(wpx*s),hh=Math.round(hpx*s);
+    need(hh+60);
+    cx.save();cx.beginPath();cx.roundRect(M,y,w,hh,18);cx.clip();
+    if(img)cx.drawImage(img,M,y,w,hh);else{cx.fillStyle='#e9eeea';cx.fillRect(M,y,w,hh)}
+    if(isVideo){
+      cx.fillStyle='rgba(0,0,0,0.45)';cx.beginPath();cx.arc(M+w/2,y+hh/2,52,0,Math.PI*2);cx.fill();
+      cx.fillStyle='#ffffff';cx.beginPath();cx.moveTo(M+w/2-16,y+hh/2-28);cx.lineTo(M+w/2-16,y+hh/2+28);cx.lineTo(M+w/2+30,y+hh/2);cx.closePath();cx.fill();
+    }
+    cx.restore();y+=hh+34;
+    wrap(label,'italic 400 24px '+FONT).forEach(function(l){need(34);if(l)draw(l,'italic 400 24px '+FONT,'#5a6a62');y+=32});y+=12;
+  }
+  async function videoFrame(m){
+    return await new Promise(function(ok){
+      var v=document.createElement('video'),done=false;
+      function fin(x){if(done)return;done=true;try{v.removeAttribute('src');v.load()}catch(e){}ok(x)}
+      v.muted=true;v.playsInline=true;v.preload='auto';v.crossOrigin='anonymous';
+      v.onerror=function(){fin(null)};
+      v.onloadedmetadata=function(){try{v.currentTime=Math.min(0.6,(v.duration||1)/3)}catch(e){fin(null)}};
+      v.onseeked=function(){
+        try{var c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);createImageBitmap(c).then(function(bm){fin({img:bm,w:c.width,h:c.height})},function(){fin(null)})}catch(e){fin(null)}
+      };
+      setTimeout(function(){fin(null)},9000);
+      v.src='/api/media?id='+encodeURIComponent(m.id);
+    });
+  }
+  async function drawMedia(e){
+    var list=e.media||[];
+    for(var i=0;i<list.length;i++){
+      var m=list[i],label=mediaFileName(e,m,i,m.mime||'');
+      if(m.type==='image'){
+        try{
+          var r=await fetchMedia(m),bm=await createImageBitmap(r.blob);
+          placeBox(bm,bm.width,bm.height,'Photo: '+label,false);
+        }catch(x){placeBox(null,textW,200,'Photo could not be loaded: '+label,false)}
+      }else{
+        var f=await videoFrame(m);
+        if(f)placeBox(f.img,f.w,f.h,'Video (first frame): '+label+' - the full video is in the Photos and videos ZIP',true);
+        else placeBox(null,textW,220,'Video: '+label+' - the full video is in the Photos and videos ZIP',true);
+      }
+    }
+  }
+  for(var ri=0;ri<rows.length;ri++){
+    var e=rows[ri];
     if(e.date!==last){
       var p=parts(e.date);need(150);y+=24;
       draw(dayName(p.y,p.m,p.d)+' '+p.d+' '+MONTHS[p.m-1]+' '+p.y,'700 38px '+FONT,'#12201a');y+=18;
@@ -609,8 +653,9 @@ async function makePdf(rows,period){
     draw(PEOPLE[e.who].full+(e.mood?'  ·  '+e.mood:''),'700 29px '+FONT,e.who==='quadri'?'#0f6b45':'#2b54a6');y+=46;
     if((e.text||'').trim())wrap(e.text.trim(),'400 31px '+FONT).forEach(function(l){need(46);if(l)draw(l,'400 31px '+FONT,'#12201a');y+=46});
     if((e.win||'').trim()){y+=6;wrap('Win: '+e.win.trim(),'italic 400 29px '+FONT).forEach(function(l){need(44);if(l)draw(l,'italic 400 29px '+FONT,'#9a6a0c');y+=44})}
+    if(e.media&&e.media.length){y+=16;var pm=$('exmsg');if(pm)pm.textContent='Adding photos and videos…';await drawMedia(e)}
     y+=34;
-  });
+  }
   pages.push(cv);
   pages.forEach(function(c,i){
     var g=c.getContext('2d');
@@ -696,6 +741,83 @@ function openWeek(y,m,w){
   setView('week',{y:y,m:m,w:w,d:d});
 }
 
+/* ---------- fetching and zipping media ---------- */
+var EXT={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','video/mp4':'mp4','video/quicktime':'mov','video/webm':'webm'};
+function findMedia(id){
+  var ks=Object.keys(S.entries);
+  for(var i=0;i<ks.length;i++){var e=S.entries[ks[i]];if(e&&e.media)for(var j=0;j<e.media.length;j++)if(e.media[j].id===id)return {m:e.media[j],e:e}}
+  return null;
+}
+async function fetchMedia(m){
+  var step=4*1024*1024,start=0,parts=[],mime=m.mime||'';
+  while(start<m.size){
+    var end=Math.min(m.size-1,start+step-1);
+    var r=await fetch('/api/media?id='+encodeURIComponent(m.id),{credentials:'same-origin',headers:{Range:'bytes='+start+'-'+end}});
+    if(!r.ok&&r.status!==206)throw new Error('fetch');
+    if(!mime)mime=r.headers.get('content-type')||'';
+    var b=await r.arrayBuffer();if(!b.byteLength)throw new Error('empty');
+    parts.push(b);start+=b.byteLength;
+  }
+  return {blob:new Blob(parts,{type:mime}),mime:mime,parts:parts};
+}
+function mediaFileName(e,m,i,mime){
+  var ext=EXT[mime]||EXT[m.mime]||'bin',base=String(m.name||'').replace(/\.[^.]*$/,'').replace(/[^\w\- ]+/g,'').trim().slice(0,40)||(m.type==='video'?'video':'photo');
+  return e.date+'_'+e.who+'_'+(i+1)+'_'+base+'.'+ext;
+}
+var CRC=null;
+function crc32(u){
+  if(!CRC){CRC=new Uint32Array(256);for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;CRC[n]=c>>>0}}
+  var c2=0xFFFFFFFF;for(var i=0;i<u.length;i++)c2=CRC[(c2^u[i])&255]^(c2>>>8);return (c2^0xFFFFFFFF)>>>0;
+}
+function makeZip(files){
+  var enc=new TextEncoder(),chunks=[],cen=[],off=0;
+  files.forEach(function(f){
+    var nm=enc.encode(f.name),crc=crc32(f.bytes),sz=f.bytes.length;
+    var lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(6,0x0800,true);lh.setUint16(8,0,true);lh.setUint16(10,0,true);lh.setUint16(12,0x21,true);
+    lh.setUint32(14,crc,true);lh.setUint32(18,sz,true);lh.setUint32(22,sz,true);lh.setUint16(26,nm.length,true);lh.setUint16(28,0,true);
+    chunks.push(new Uint8Array(lh.buffer),nm,f.bytes);
+    var ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);ch.setUint16(4,20,true);ch.setUint16(6,20,true);ch.setUint16(8,0x0800,true);ch.setUint16(10,0,true);ch.setUint16(12,0,true);ch.setUint16(14,0x21,true);
+    ch.setUint32(16,crc,true);ch.setUint32(20,sz,true);ch.setUint32(24,sz,true);ch.setUint16(28,nm.length,true);ch.setUint32(42,off,true);
+    cen.push(new Uint8Array(ch.buffer),nm);
+    off+=30+nm.length+sz;
+  });
+  var csz=0;cen.forEach(function(c){csz+=c.length});
+  var end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true);end.setUint16(8,files.length,true);end.setUint16(10,files.length,true);end.setUint32(12,csz,true);end.setUint32(16,off,true);
+  return new Blob(chunks.concat(cen,[new Uint8Array(end.buffer)]),{type:'application/zip'});
+}
+async function saveOne(id,btn){
+  var f=findMedia(id);if(!f)return;
+  var old=btn.textContent;btn.disabled=true;btn.textContent='Saving\u2026';
+  try{
+    var r=await fetchMedia(f.m);
+    var list=f.e.media,idx=list.indexOf(f.m);
+    saveFile(r.blob,mediaFileName(f.e,f.m,idx<0?0:idx,r.mime));
+  }catch(e){mediaSay('Could not save that file. Check your connection and try again.')}
+  btn.disabled=false;btn.textContent=old;
+}
+async function exportMediaZip(kind){
+  var el=$('exmsg'),rows=exportRows(kind).filter(function(e){return e.media&&e.media.length});
+  var items=[];rows.forEach(function(e){e.media.forEach(function(m,i){items.push({e:e,m:m,i:i})})});
+  if(!items.length){el.textContent='No photos or videos in that period yet.';return}
+  var total=items.reduce(function(a,x){return a+x.m.size},0);
+  if(total>400*1024*1024){el.textContent='That is '+Math.round(total/1048576)+' MB, too much for one file. Choose a single month.';return}
+  var files=[];
+  try{
+    for(var k=0;k<items.length;k++){
+      el.textContent='Collecting file '+(k+1)+' of '+items.length+'\u2026';
+      var r=await fetchMedia(items[k].m);
+      files.push({name:mediaFileName(items[k].e,items[k].m,items[k].i,r.mime),bytes:new Uint8Array(await r.blob.arrayBuffer())});
+    }
+    el.textContent='Packing the file\u2026';
+    var name='diary-media-'+(kind==='year'?S.y:S.y+'-'+pad(S.m))+'.zip';
+    saveFile(makeZip(files),name);
+    el.textContent='Saved '+files.length+' photos and videos ('+Math.round(total/1048576*10)/10+' MB) to '+name+'.';
+  }catch(e){el.textContent='Could not collect every file. Check your connection and try again.'}
+}
+
 /* ---------- photos and videos ---------- */
 var MAXV=50*1024*1024,MAXI=10*1024*1024,OKMIME=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm'];
 function mediaBlock(e,editable){
@@ -703,7 +825,7 @@ function mediaBlock(e,editable){
   if(list.length){
     h+='<div class="mgrid">'+list.map(function(m){
       var src='/api/media?id='+encodeURIComponent(m.id);
-      var del=editable?'<button type="button" class="mdel" data-act="mediadel" data-id="'+esc(m.id)+'" aria-label="Remove">Remove</button>':'';
+      var del=(editable?'<button type="button" class="mdel" data-act="mediadel" data-id="'+esc(m.id)+'" aria-label="Remove">Remove</button>':'')+'<button type="button" class="msave" data-act="mediasave" data-id="'+esc(m.id)+'" data-date="'+esc(e.date)+'" data-who="'+esc(e.who)+'" aria-label="Save to this device">Save</button>';
       if(m.type==='video')return '<div class="mi v"><video controls playsinline preload="metadata" src="'+src+'"></video>'+del+'</div>';
       return '<div class="mi"><img loading="lazy" src="'+src+'" alt="'+esc(m.name||'Photo')+'" data-act="viewimg" data-src="'+src+'">'+del+'</div>';
     }).join('')+'</div>';
@@ -909,6 +1031,8 @@ document.addEventListener('click',function(ev){
   else if(a==='photo'){openPhoto(+b.dataset.i)}
   else if(a==='logout'){logout()}
   else if(a==='mediadel'){removeMedia(b.dataset.id)}
+  else if(a==='mediasave'){saveOne(b.dataset.id,b)}
+  else if(a==='mediazip'){exportMediaZip(b.dataset.kind)}
   else if(a==='viewimg'){var im=$('lbi');im.src=b.dataset.src;im.alt='Photo';$('lb').hidden=false}
   else if(a==='export'){exportDiary(b.dataset.kind,b.dataset.fmt)}
   else if(a==='pushon'){pushOn()}
