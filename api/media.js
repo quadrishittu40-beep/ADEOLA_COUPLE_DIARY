@@ -119,7 +119,7 @@ module.exports = async function (req, res) {
         const day = cur.days[meta.date] || { mood: '', text: '', win: '', updated: Date.now() };
         day.media = (day.media || []).filter((m) => m.id !== meta.id);
         if (day.media.length >= MAX_ITEMS) return L.json(res, 400, { error: 'A page can hold up to ' + MAX_ITEMS + ' photos and videos.' });
-        day.media.push({ id: meta.id, type: meta.type, name: meta.name, size: meta.size });
+        day.media.push({ id: meta.id, type: meta.type, name: meta.name, size: meta.size, mime: meta.mime });
         day.updated = Date.now();
         cur.days[meta.date] = day;
         await L.store.writeJson(file, cur);
