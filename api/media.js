@@ -70,7 +70,7 @@ module.exports = async function (req, res) {
     if (req.method === 'GET') {
       if (!idOk(q.id)) return L.json(res, 400, { error: 'Bad link.' });
       const meta = await L.store.readJson(metaPath(q.id));
-      if (!meta || !meta.done) return L.json(res, 404, { error: 'Not found.' });
+      if (!meta) return L.json(res, 404, { error: 'Not found.' });
       return await serve(req, res, meta);
     }
 
@@ -89,14 +89,14 @@ module.exports = async function (req, res) {
       if (day && day.media && day.media.length >= MAX_ITEMS) return L.json(res, 400, { error: 'A page can hold up to ' + MAX_ITEMS + ' photos and videos.' });
       const id = crypto.randomBytes(12).toString('hex');
       const chunks = Math.ceil(size / CH);
-      await L.store.writeJson(metaPath(id), { id: id, who: s.who, date: b.date, mime: b.mime, type: type, size: size, name: String(b.name || '').slice(0, 120), chunks: chunks, done: false, created: Date.now() });
+      await L.store.writeJson(metaPath(id), { id: id, who: s.who, date: b.date, mime: b.mime, type: type, size: size, name: String(b.name || '').slice(0, 120), chunks: chunks, created: Date.now() });
       return L.json(res, 200, { id: id, chunk: CH, chunks: chunks });
     }
 
     if (req.method === 'PUT') {
       if (!idOk(q.id)) return L.json(res, 400, { error: 'Bad upload.' });
       const meta = await L.store.readJson(metaPath(q.id));
-      if (!meta || meta.who !== s.who || meta.done) return L.json(res, 404, { error: 'Upload not found.' });
+      if (!meta || meta.who !== s.who) return L.json(res, 404, { error: 'Upload not found.' });
       const n = +q.n;
       if (!Number.isInteger(n) || n < 0 || n >= meta.chunks) return L.json(res, 400, { error: 'Bad piece number.' });
       const buf = await rawBody(req);
@@ -111,23 +111,9 @@ module.exports = async function (req, res) {
       const meta = await L.store.readJson(metaPath(q.id));
       if (!meta || meta.who !== s.who) return L.json(res, 404, { error: 'Upload not found.' });
       if (L.isSealed(meta.date, today)) return L.json(res, 403, { error: 'This week is sealed.' });
-      if (!meta.done) {
-        const have = await L.store.listPaths('media/' + meta.id + '/c');
-        if (have.length !== meta.chunks) return L.json(res, 400, { error: 'The upload is incomplete. Try again.' });
-        const file = entryFile(s.who, meta.date);
-        const cur = (await L.store.readJson(file)) || { days: {} };
-        const day = cur.days[meta.date] || { mood: '', text: '', win: '', updated: Date.now() };
-        day.media = (day.media || []).filter((m) => m.id !== meta.id);
-        if (day.media.length >= MAX_ITEMS) return L.json(res, 400, { error: 'A page can hold up to ' + MAX_ITEMS + ' photos and videos.' });
-        day.media.push({ id: meta.id, type: meta.type, name: meta.name, size: meta.size, mime: meta.mime });
-        day.updated = Date.now();
-        cur.days[meta.date] = day;
-        await L.store.writeJson(file, cur);
-        meta.done = true;
-        await L.store.writeJson(metaPath(meta.id), meta);
-      }
-      const cur2 = (await L.store.readJson(entryFile(s.who, meta.date))) || { days: {} };
-      return L.json(res, 200, { ok: true, entry: Object.assign({ date: meta.date, who: s.who }, cur2.days[meta.date]) });
+      const have = await L.store.listPaths('media/' + meta.id + '/c');
+      if (have.length !== meta.chunks) return L.json(res, 400, { error: 'The upload is incomplete. Try again.' });
+      return L.json(res, 200, { ok: true, media: L.signMedia({ id: meta.id, type: meta.type, name: meta.name, size: meta.size, mime: meta.mime }, meta.who, meta.date) });
     }
 
     if (req.method === 'DELETE') {
@@ -135,19 +121,8 @@ module.exports = async function (req, res) {
       const meta = await L.store.readJson(metaPath(q.id));
       if (!meta || meta.who !== s.who) return L.json(res, 404, { error: 'Not found.' });
       if (L.isSealed(meta.date, today)) return L.json(res, 403, { error: 'This week is sealed. Its pages can no longer change.' });
-      const file = entryFile(s.who, meta.date);
-      const cur = (await L.store.readJson(file)) || { days: {} };
-      const day = cur.days[meta.date];
-      let entry = null;
-      if (day) {
-        day.media = (day.media || []).filter((m) => m.id !== meta.id);
-        if (!day.media.length) delete day.media;
-        if (!day.mood && !(day.text || '').trim() && !(day.win || '').trim() && !day.media) delete cur.days[meta.date];
-        else { day.updated = Date.now(); entry = Object.assign({ date: meta.date, who: s.who }, day); }
-        await L.store.writeJson(file, cur);
-      }
       await L.store.removePrefix('media/' + meta.id + '/');
-      return L.json(res, 200, { ok: true, entry: entry });
+      return L.json(res, 200, { ok: true });
     }
 
     return L.json(res, 405, { error: 'Method not allowed.' });

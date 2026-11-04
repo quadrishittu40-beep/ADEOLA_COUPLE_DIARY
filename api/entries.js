@@ -35,8 +35,23 @@ module.exports = async function (req, res) {
       const rec = { mood: mood, text: clip(b.text, 20000), win: clip(b.win, 200), updated: Date.now() };
       const file = 'entries/' + p.y + '/' + s.who + '/' + String(p.m).padStart(2, '0') + '.json';
       const cur = (await L.store.readJson(file)) || { days: {} };
-      const prev = cur.days[b.date];
-      if (prev && Array.isArray(prev.media) && prev.media.length) rec.media = prev.media;
+      // The app sends the full list of attached photos and videos. The server never has to guess it
+      // from an older copy of the file, so a stale read of the file cannot drop an attachment.
+      if (b.media === undefined) {
+        const prev = cur.days[b.date];
+        if (prev && Array.isArray(prev.media) && prev.media.length) rec.media = prev.media;
+      } else if (Array.isArray(b.media) && b.media.length) {
+        const list = [];
+        for (const m of b.media) {
+          if (!m || typeof m !== 'object' || !/^[a-f0-9]{24}$/.test(String(m.id || ''))) continue;
+          if (list.some((x) => x.id === m.id) || list.length >= 8) continue;
+          if (L.checkMedia(m, s.who, b.date)) { list.push({ id: m.id, type: m.type, name: m.name, size: m.size, mime: m.mime, sig: m.sig }); continue; }
+          const meta = await L.store.readJson('media/' + m.id + '/meta.json');
+          if (!meta || meta.who !== s.who || meta.date !== b.date) continue;
+          list.push(L.signMedia({ id: m.id, type: meta.type, name: meta.name, size: meta.size, mime: meta.mime }, s.who, b.date));
+        }
+        if (list.length) rec.media = list;
+      }
       const empty = !rec.mood && !rec.text.trim() && !rec.win.trim() && !rec.media;
       if (empty) delete cur.days[b.date]; else cur.days[b.date] = rec;
       await L.store.writeJson(file, cur);

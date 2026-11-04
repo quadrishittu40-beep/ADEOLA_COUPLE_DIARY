@@ -94,3 +94,12 @@ async function allUsers() {
 }
 
 module.exports = { store, NAMES, json, body, session, setSession, makeToken, todayStr, parseDate, isSealed, dim, emailId, hashPw, allUsers };
+
+// A photo/video descriptor signed by the server when an upload finishes. The diary entry can then
+// be saved without re-reading storage, so a slow or stale read can never drop an attachment.
+const _c = require('crypto');
+function _mediaSig(m, who, date) {
+  return _c.createHmac('sha256', process.env.AUTH_SECRET || 'dev').update(['media', m.id, m.type, m.name, m.size, m.mime, who, date].join('|')).digest('hex').slice(0, 32);
+}
+module.exports.signMedia = function (m, who, date) { return Object.assign({}, m, { sig: _mediaSig(m, who, date) }); };
+module.exports.checkMedia = function (m, who, date) { return !!(m && m.sig && m.sig === _mediaSig(m, who, date)); };
