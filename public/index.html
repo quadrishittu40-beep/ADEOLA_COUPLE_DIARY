@@ -880,19 +880,26 @@ async function uploadFiles(files){
       await waitSaved(date);
       var d=await api('POST','/api/media?action=done&id='+id);
       if(!d.ok){mediaSay(d.data&&d.data.error||'Could not finish the upload.');continue}
-      S.entries[date+'_'+S.me]=d.data.entry;
-      mediaSay('Added.');refreshLeaf();
+      var key=date+'_'+S.me,cur=S.entries[key]||{date:date,who:S.me,mood:'',text:'',win:''};
+      var nm=(cur.media||[]).filter(function(x){return x.id!==d.data.media.id}).concat([d.data.media]);
+      S.entries[key]=Object.assign({},cur,{media:nm});
+      drafts[date]=buildDraft(date);pendingSave();
+      mediaSay('Saving\u2026');
+      await flush(date);
+      var ok=((S.entries[key]||{}).media||[]).some(function(x){return x.id===d.data.media.id});
+      mediaSay(ok?'Added.':'Could not attach it to the page. Try again.');refreshLeaf();
     }catch(e){mediaSay('Upload stopped. Check your connection and try again.')}
   }
 }
 async function removeMedia(id){
-  var date=iso(S.y,S.m,S.d);
+  var date=iso(S.y,S.m,S.d),key=date+'_'+S.me,cur=S.entries[key];
+  if(!cur)return;
   mediaSay('Removing\u2026');
+  S.entries[key]=Object.assign({},cur,{media:(cur.media||[]).filter(function(x){return x.id!==id})});
+  drafts[date]=buildDraft(date);pendingSave();
   try{
-    var r=await api('DELETE','/api/media?id='+encodeURIComponent(id));
-    if(!r.ok){mediaSay(r.data&&r.data.error||'Could not remove it.');return}
-    var key=date+'_'+S.me;
-    if(r.data.entry)S.entries[key]=r.data.entry;else delete S.entries[key];
+    await waitSaved(date);await flush(date);
+    api('DELETE','/api/media?id='+encodeURIComponent(id)).catch(function(){});
     mediaSay('Removed.');refreshLeaf();
   }catch(e){mediaSay('No connection. Try again when you are online.')}
 }
@@ -922,10 +929,17 @@ function pendingLoad(){try{var o=JSON.parse(localStorage.getItem('diary-pending'
 
 /* ---------- saving ---------- */
 function setSaved(t){var el=$('saved');if(el)el.textContent=t}
-function collect(){
-  var date=iso(S.y,S.m,S.d),chip=document.querySelector('#leaf-'+S.me+' .chip.on');
-  return {date:date,who:S.me,mood:chip?chip.dataset.mood:'',text:$('f-text').value,win:$('f-win').value,media:(S.entries[date+'_'+S.me]||{}).media,pending:true};
+function buildDraft(date){
+  var key=date+'_'+S.me,cur=S.entries[key]||{};
+  var onPage=iso(S.y,S.m,S.d)===date&&$('f-text');
+  var chip=onPage?document.querySelector('#leaf-'+S.me+' .chip.on'):null;
+  return {date:date,who:S.me,
+    mood:onPage?(chip?chip.dataset.mood:''):(cur.mood||''),
+    text:onPage?$('f-text').value:(cur.text||''),
+    win:onPage?$('f-win').value:(cur.win||''),
+    media:cur.media||[],pending:true};
 }
+function collect(){return buildDraft(iso(S.y,S.m,S.d))}
 function onEdit(){
   if(!S.me||!$('f-text'))return;
   var dr=collect();drafts[dr.date]=dr;pendingSave();
@@ -947,7 +961,7 @@ async function flush(date){
       dirty[date]=false;
       var dr=drafts[date];
       if(!dr)break;
-      var r=await api('PUT','/api/entries',{date:date,mood:dr.mood,text:dr.text,win:dr.win});
+      var r=await api('PUT','/api/entries',{date:date,mood:dr.mood,text:dr.text,win:dr.win,media:(dr.media||[])});
       if(r.status===401){S.me=null;updateView();break}
       if(!r.ok){
         delete drafts[date];pendingSave();
