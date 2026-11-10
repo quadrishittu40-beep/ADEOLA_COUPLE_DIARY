@@ -45,6 +45,28 @@ body{
   padding-left:max(16px, env(safe-area-inset-left, 0px));
   padding-right:max(16px, env(safe-area-inset-right, 0px));
 }
+/* a different background colour for every day of the week */
+:root[data-day="0"]{--bg:#FBE9E7}:root[data-day="1"]{--bg:#E3F1FB}:root[data-day="2"]{--bg:#E8F5E1}:root[data-day="3"]{--bg:#FFF4D6}
+:root[data-day="4"]{--bg:#F1E6FA}:root[data-day="5"]{--bg:#DFF5F1}:root[data-day="6"]{--bg:#FDE6F0}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"])[data-day="0"]{--bg:#2A1612}:root:not([data-theme="light"])[data-day="1"]{--bg:#0F2230}
+  :root:not([data-theme="light"])[data-day="2"]{--bg:#14260F}:root:not([data-theme="light"])[data-day="3"]{--bg:#2B2410}
+  :root:not([data-theme="light"])[data-day="4"]{--bg:#1F1530}:root:not([data-theme="light"])[data-day="5"]{--bg:#0D2723}
+  :root:not([data-theme="light"])[data-day="6"]{--bg:#2E1423}
+}
+:root[data-theme="dark"][data-day="0"]{--bg:#2A1612}:root[data-theme="dark"][data-day="1"]{--bg:#0F2230}
+:root[data-theme="dark"][data-day="2"]{--bg:#14260F}:root[data-theme="dark"][data-day="3"]{--bg:#2B2410}
+:root[data-theme="dark"][data-day="4"]{--bg:#1F1530}:root[data-theme="dark"][data-day="5"]{--bg:#0D2723}
+:root[data-theme="dark"][data-day="6"]{--bg:#2E1423}
+body{transition:background-color .4s}
+p.today{font-size:17px;font-weight:800;color:var(--ink)}
+.pg.istoday{border:2px solid var(--ink);font-weight:800}
+.pg.istoday .pd{font-weight:800;font-size:17px}
+.pg.istoday .pn::after{content:" · TODAY";font-weight:800;color:var(--ink)}
+.pg.istoday[aria-current="true"] .pn::after{color:var(--bg)}
+.pagebar.istoday h3,.pagebar.istoday span{font-weight:800;color:var(--ink)}
+.pagebar.istoday h3{font-size:24px}
+
 .wrap{max-width:1040px;margin:0 auto}
 button{font:inherit;color:inherit}
 .mono{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -326,12 +348,12 @@ function updateWeek(){
   var h='';
   for(var d=wS(w);d<=e;d++){
     var date=iso(y,m,d),fut=date>TODAY(),row=idx[date]||{};
-    h+='<button class="pg" data-act="page" data-d="'+d+'" aria-current="'+(S.d===d)+'"'+(fut?' disabled':'')+' aria-label="Page '+(d-wS(w)+1)+', '+dayName(y,m,d)+' '+d+'">'+
+    h+='<button class="pg'+(date===TODAY()?' istoday':'')+'" data-act="page" data-d="'+d+'" aria-current="'+(S.d===d)+'"'+(fut?' disabled':'')+' aria-label="Page '+(d-wS(w)+1)+', '+dayName(y,m,d)+' '+d+'">'+
       '<span class="pn">Page '+(d-wS(w)+1)+'</span><span class="pd">'+dayName(y,m,d).slice(0,3)+' '+d+'</span>'+
       '<span class="dots2"><i class="dot q'+(row.quadri?' on':'')+'"></i><i class="dot o'+(row.olamide?' on':'')+'"></i></span></button>';
   }
   $('pager').innerHTML=h;
-  $('pagebar').innerHTML='<h3>Page '+(S.d-wS(w)+1)+'</h3><span>'+dayName(y,m,S.d)+' '+S.d+' '+MONTHS[m-1]+' '+y+'</span>';
+  $('pagebar').className='pagebar'+(iso(y,m,S.d)===TODAY()?' istoday':'');$('pagebar').innerHTML='<h3>Page '+(S.d-wS(w)+1)+'</h3><span>'+dayName(y,m,S.d)+' '+S.d+' '+MONTHS[m-1]+' '+y+'</span>';
   ORDER.forEach(function(k){
     var el=$('leaf-'+k);
     if(!el||skipLeaf(k))return;
@@ -693,8 +715,12 @@ async function makePdf(rows,period){
 }
 
 /* ---------- view control ---------- */
+function applyDayTheme(){
+  var p=S.view==='week'?parts(iso(S.y,S.m,S.d)):parts(TODAY());
+  document.documentElement.setAttribute('data-day',String(new Date(Date.UTC(p.y,p.m-1,p.d)).getUTCDay()));
+}
 function updateView(){
-  renderToday();renderWho();renderGate();renderTabs();
+  applyDayTheme();renderToday();renderWho();renderGate();renderTabs();
   if(S.view==='week'){
     if(S.shell!=='week'){buildWeekShell();S.shell='week'}
     updateWeek();
