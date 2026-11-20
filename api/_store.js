@@ -1,8 +1,10 @@
 'use strict';
 // Storage layer.
-// 1) SUPABASE_URL + SUPABASE_SERVICE_KEY set -> a private Supabase Storage bucket (free, no operation limits).
-// 2) otherwise -> private Vercel Blob store (BLOB_READ_WRITE_TOKEN).
-// 3) STORE_DIR set -> plain files, for local testing.
+// 1) SUPABASE_URL + SUPABASE_ANON_KEY + DIARY_DB_SECRET -> a private table in the Supabase database,
+//    reached only through guarded functions that check DIARY_DB_SECRET (free, no operation limits).
+// 2) SUPABASE_URL + SUPABASE_SERVICE_KEY -> a private Supabase Storage bucket.
+// 3) otherwise -> private Vercel Blob store (BLOB_READ_WRITE_TOKEN).
+// 4) STORE_DIR set -> plain files, for local testing.
 const fs = require('fs');
 const path = require('path');
 
@@ -11,6 +13,21 @@ const SB_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const SB_BUCKET = process.env.SUPABASE_BUCKET || 'diary';
 const SB = !DIR && !!SB_URL && !!SB_KEY;
+
+// ---------- Supabase database through guarded functions (plain REST, no packages) ----------
+const RP_KEY = process.env.SUPABASE_ANON_KEY || '';
+const RP_SECRET = process.env.DIARY_DB_SECRET || '';
+const RP = !DIR && !!SB_URL && !!RP_KEY && !!RP_SECRET;
+async function rpc(fn, args) {
+  const h = { apikey: RP_KEY, 'Content-Type': 'application/json' };
+  if (RP_KEY.indexOf('eyJ') === 0) h.Authorization = 'Bearer ' + RP_KEY;
+  const r = await fetch(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: h, body: JSON.stringify(Object.assign({ p_secret: RP_SECRET }, args)) });
+  if (!r.ok) throw new Error('Database call ' + fn + ' failed (' + r.status + '): ' + (await r.text()).slice(0, 200));
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+async function rpGet(pathname) { const b64 = await rpc('diary_get', { p_path: pathname }); return b64 == null ? null : Buffer.from(b64, 'base64'); }
+async function rpPut(pathname, buf) { await rpc('diary_put', { p_path: pathname, p_data: Buffer.from(buf).toString('base64') }); }
 
 // ---------- Supabase Storage (plain REST, no packages) ----------
 const encPath = (p) => p.split('/').map(encodeURIComponent).join('/');
@@ -86,6 +103,7 @@ async function readJson(pathname) {
   if (DIR) {
     try { return JSON.parse(fs.readFileSync(path.join(DIR, pathname), 'utf8')); } catch (e) { return null; }
   }
+  if (RP) { const buf = await rpGet(pathname); if (!buf) return null; try { return JSON.parse(buf.toString('utf8')); } catch (e) { return null; } }
   if (SB) { const buf = await sbGet(pathname); if (!buf) return null; try { return JSON.parse(buf.toString('utf8')); } catch (e) { return null; } }
   const b = await blobLib();
   const token = process.env.BLOB_READ_WRITE_TOKEN;
@@ -113,6 +131,7 @@ async function writeJson(pathname, data) {
     fs.writeFileSync(f, body);
     return;
   }
+  if (RP) return rpPut(pathname, Buffer.from(body));
   if (SB) return sbPut(pathname, Buffer.from(body), 'application/json');
   const b = await blobLib();
   await b.put(pathname, body, {
@@ -142,6 +161,7 @@ async function listPaths(prefix) {
     })(dir);
     return out;
   }
+  if (RP) return rpc('diary_list', { p_prefix: prefix });
   if (SB) return sbListPaths(prefix);
   const b = await blobLib();
   const out = [];
@@ -158,6 +178,7 @@ async function readBuffer(pathname) {
   if (DIR) {
     try { return fs.readFileSync(path.join(DIR, pathname)); } catch (e) { return null; }
   }
+  if (RP) return rpGet(pathname);
   if (SB) return sbGet(pathname);
   const b = await blobLib();
   const token = process.env.BLOB_READ_WRITE_TOKEN;
@@ -181,6 +202,7 @@ async function writeBuffer(pathname, buf, contentType) {
     fs.writeFileSync(f, buf);
     return;
   }
+  if (RP) return rpPut(pathname, buf);
   if (SB) return sbPut(pathname, buf, contentType);
   const b = await blobLib();
   await b.put(pathname, buf, {
@@ -195,6 +217,7 @@ async function removePrefix(prefix) {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
     return;
   }
+  if (RP) { await rpc('diary_del', { p_prefix: prefix }); return; }
   if (SB) { const ps = await sbListPaths(prefix); if (ps.length) await sbRemove(ps); return; }
   const b = await blobLib();
   const token = process.env.BLOB_READ_WRITE_TOKEN;
