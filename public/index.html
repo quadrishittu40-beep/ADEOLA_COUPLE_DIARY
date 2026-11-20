@@ -1130,7 +1130,7 @@ setInterval(function(){
   await loadMe();
   updateView();
   if(S.me){ensureYear(true);syncPending()}
-  setInterval(function(){if(document.visibilityState==='visible'&&S.me&&!document.activeElement.matches('textarea,input'))pull()},20000);
+  setInterval(function(){if(document.visibilityState==='visible'&&S.me&&!document.activeElement.matches('textarea,input'))pull()},60000);
   window.addEventListener('online',function(){loadMe().then(function(){if(S.me){syncPending();pull()}})});
   window.addEventListener('offline',function(){setOnline(false)});
   document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&S.me){syncPending();pull()}});
