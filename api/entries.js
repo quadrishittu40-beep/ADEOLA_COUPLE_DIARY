@@ -41,6 +41,8 @@ module.exports = async function (req, res) {
       const rec = { mood: mood, text: clip(b.text, 20000), win: clip(b.win, 200), updated: Date.now() };
       const file = 'entries/' + p.y + '/' + s.who + '/' + String(p.m).padStart(2, '0') + '.json';
       const cur = (await L.store.readJson(file)) || { days: {} };
+      const before = cur.days[b.date];
+      rec.created = (before && before.created) || (before && before.updated) || Date.now(); // when the page was first written
       // The app sends the full list of attached photos and videos. The server never has to guess it
       // from an older copy of the file, so a stale read of the file cannot drop an attachment.
       if (b.media === undefined) {

@@ -1,5 +1,5 @@
 'use strict';
-// Photos and videos. Files are cut into 3 MB pieces by the app (Vercel limits one request to about 4.5 MB),
+// Photos, videos and audio. Files are cut into 3 MB pieces by the app (Vercel limits one request to about 4.5 MB),
 // stored as private pieces, and served back with Range support so videos can play and seek.
 const crypto = require('crypto');
 const L = require('./_lib');
@@ -8,10 +8,13 @@ const CH = 3 * 1024 * 1024;
 const SERVE_MAX = 4 * 1024 * 1024;
 const MAX_IMAGE = 10 * 1024 * 1024;
 const MAX_VIDEO = 50 * 1024 * 1024;
+const MAX_AUDIO = 25 * 1024 * 1024;
 const MAX_ITEMS = 8;
 const MIMES = {
   'image/jpeg': 'image', 'image/png': 'image', 'image/webp': 'image', 'image/gif': 'image',
-  'video/mp4': 'video', 'video/quicktime': 'video', 'video/webm': 'video'
+  'video/mp4': 'video', 'video/quicktime': 'video', 'video/webm': 'video',
+  'audio/mpeg': 'audio', 'audio/mp4': 'audio', 'audio/x-m4a': 'audio', 'audio/aac': 'audio', 'audio/wav': 'audio', 'audio/x-wav': 'audio',
+  'audio/ogg': 'audio', 'audio/webm': 'audio', 'audio/opus': 'audio', 'audio/flac': 'audio'
 };
 const idOk = (s) => /^[a-f0-9]{24}$/.test(String(s || ''));
 const metaPath = (id) => 'media/' + id + '/meta.json';
@@ -77,16 +80,16 @@ module.exports = async function (req, res) {
     if (req.method === 'POST' && q.action === 'init') {
       const b = await L.body(req);
       const type = MIMES[b.mime];
-      if (!type) return L.json(res, 400, { error: 'That file type is not supported. Use JPG, PNG, WebP, GIF, MP4, MOV or WebM.' });
+      if (!type) return L.json(res, 400, { error: 'That file type is not supported. Use JPG, PNG, WebP, GIF, MP4, MOV, WebM, MP3, M4A, AAC, WAV, OGG or FLAC.' });
       const size = +b.size;
       if (!(size > 0)) return L.json(res, 400, { error: 'That file is empty.' });
-      if (size > (type === 'image' ? MAX_IMAGE : MAX_VIDEO)) return L.json(res, 400, { error: type === 'image' ? 'Photos can be up to 10 MB.' : 'Videos can be up to 50 MB. Trim or compress it first.' });
+      if (size > (type === 'image' ? MAX_IMAGE : type === 'audio' ? MAX_AUDIO : MAX_VIDEO)) return L.json(res, 400, { error: type === 'image' ? 'Photos can be up to 10 MB.' : type === 'audio' ? 'Audio files can be up to 25 MB.' : 'Videos can be up to 50 MB. Trim or compress it first.' });
       if (!L.parseDate(b.date)) return L.json(res, 400, { error: 'That date is not valid.' });
       if (b.date > today) return L.json(res, 400, { error: 'This page is not open yet.' });
       if (L.isSealed(b.date, today)) return L.json(res, 403, { error: 'This week is sealed. Nothing can be added to it.' });
       const cur = (await L.store.readJson(entryFile(s.who, b.date))) || { days: {} };
       const day = cur.days[b.date];
-      if (day && day.media && day.media.length >= MAX_ITEMS) return L.json(res, 400, { error: 'A page can hold up to ' + MAX_ITEMS + ' photos and videos.' });
+      if (day && day.media && day.media.length >= MAX_ITEMS) return L.json(res, 400, { error: 'A page can hold up to ' + MAX_ITEMS + ' photos, videos and audio files.' });
       const id = crypto.randomBytes(12).toString('hex');
       const chunks = Math.ceil(size / CH);
       await L.store.writeJson(metaPath(id), { id: id, who: s.who, date: b.date, mime: b.mime, type: type, size: size, name: String(b.name || '').slice(0, 120), chunks: chunks, created: Date.now() });
