@@ -136,6 +136,7 @@ textarea{min-height:230px;resize:vertical}
 .win .k{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);flex:none}
 .empty{color:var(--muted);margin:0}
 .saved{font-family:var(--f-mono);font-size:12px;color:var(--muted);min-height:1.2em;margin-top:auto}
+.wtime{font-size:13px;color:var(--muted);margin:2px 0 0}
 .rx{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .rx .rxl{font-size:12px;color:var(--muted);margin:0 0 8px}
 .rx .rxrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -317,6 +318,22 @@ function shiftWeek(dir){
 function buildWeekShell(){
   $('view').innerHTML='<section id="wkhead"></section><div class="pagerwrap"><div class="pager" id="pager"></div></div><div class="pagebar" id="pagebar"></div><div class="spread"><article class="leaf q" id="leaf-quadri"></article><article class="leaf o" id="leaf-olamide"></article></div>';
 }
+function lagosDay(ts){return new Date(ts).toLocaleDateString('en-CA',{timeZone:'Africa/Lagos'})}
+function fmtT(ts,pageDate){
+  var d=new Date(ts),t=d.toLocaleTimeString('en-GB',{timeZone:'Africa/Lagos',hour:'numeric',minute:'2-digit',hour12:true}).replace(/\s?(am|pm)/i,function(m,a){return ' '+a.toLowerCase()});
+  if(lagosDay(ts)===pageDate)return t;
+  return d.toLocaleDateString('en-GB',{timeZone:'Africa/Lagos',weekday:'short',day:'numeric',month:'short'})+', '+t;
+}
+function writtenTxt(e){
+  if(!e||!written(e))return '';
+  var c=e.created||e.updated;if(!c)return '';
+  var t='Written '+fmtT(c,e.date);
+  if(e.updated&&e.updated-c>=10*60*1000)t+=' \u00B7 last edited '+fmtT(e.updated,e.date);
+  return t;
+}
+function paintWt(){
+  ORDER.forEach(function(k){var el=$('wt-'+k);if(el)el.textContent=writtenTxt(S.entries[iso(S.y,S.m,S.d)+'_'+k])});
+}
 var RXQ=['\u2764\uFE0F','\uD83D\uDE02','\uD83D\uDC4D','\uD83E\uDD32','\uD83E\uDD70','\uD83D\uDE22','\uD83C\uDF89','\uD83D\uDD25','\uD83D\uDE0D','\uD83D\uDE4F','\uD83D\uDE2E','\uD83D\uDCAF'];
 function rxEmojis(text){
   var segs=[];
@@ -361,7 +378,7 @@ function leafHtml(who){
   var date=iso(S.y,S.m,S.d),e=S.entries[date+'_'+who],p=PEOPLE[who],isMe=S.me===who;
   var sealed=weekSt(S.y,S.m,S.w)==='sealed';
   var editable=isMe&&!sealed&&date<=TODAY();
-  var h='<div class="lhead"><span class="dot solid '+p.cls+'"></span><div class="nm"><strong>'+p.short+'</strong>'+(isMe?'<span class="you">You</span>':'')+'<span class="full">'+p.full+'</span></div></div>';
+  var h='<div class="lhead"><span class="dot solid '+p.cls+'"></span><div class="nm"><strong>'+p.short+'</strong>'+(isMe?'<span class="you">You</span>':'')+'<span class="full">'+p.full+'</span></div></div><p class="wtime" id="wt-'+who+'">'+esc(writtenTxt(e))+'</p>';
   if(editable){
     var cur=(e&&e.mood)||'';
     h+='<div><span class="label">Mood</span><div class="chips">'+MOODS.map(function(md){return '<button class="chip'+(cur===md?' on':'')+'" data-act="mood" data-mood="'+md+'" aria-pressed="'+(cur===md)+'">'+md+'</button>'}).join('')+'</div></div>';
@@ -412,7 +429,7 @@ function updateWeek(){
     if(!el||skipLeaf(k))return;
     el.innerHTML=leafHtml(k);
   });
-  paintRx();
+  paintRx();paintWt();
 }
 
 /* ---------- month view ---------- */
@@ -621,7 +638,7 @@ async function exportDiary(kind,fmt){
       var out='QUADRI AND OLAMIDE DIARY\n'+period+'\n\n',last='';
       rows.forEach(function(e){
         if(e.date!==last){var p=parts(e.date);out+='==== '+dayName(p.y,p.m,p.d)+' '+p.d+' '+MONTHS[p.m-1]+' '+p.y+' ====\n\n';last=e.date}
-        out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
+        out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+(writtenTxt(e)?' \u00B7 '+writtenTxt(e).toLowerCase().replace(/^written/,'written'):'')+'\n';
         if((e.text||'').trim())out+=e.text.trim()+'\n';
         if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
         var rr=S.rx[e.date+'|'+e.who]||{},rl=Object.keys(rr).map(function(k){return PEOPLE[k].short+': '+rr[k].join(' ')});if(rl.length)out+='Reactions: '+rl.join('  ')+'\n';
@@ -730,6 +747,7 @@ async function makePdf(rows,period){
     }
     need(120);
     draw(PEOPLE[e.who].full+(e.mood?'  ·  '+e.mood:''),'700 29px '+FONT,e.who==='quadri'?'#0f6b45':'#2b54a6');y+=46;
+    if(writtenTxt(e)){draw(writtenTxt(e),'400 24px '+FONT,'#5a6a62');y+=38}
     if((e.text||'').trim())wrap(e.text.trim(),'400 31px '+FONT).forEach(function(l){need(46);if(l)draw(l,'400 31px '+FONT,'#12201a');y+=46});
     if((e.win||'').trim()){y+=6;wrap('Win: '+e.win.trim(),'italic 400 29px '+FONT).forEach(function(l){need(44);if(l)draw(l,'italic 400 29px '+FONT,'#9a6a0c');y+=44})}
     var rr2=S.rx[e.date+'|'+e.who]||{},rl2=Object.keys(rr2).map(function(k){return PEOPLE[k].short+' '+rr2[k].join(' ')});
