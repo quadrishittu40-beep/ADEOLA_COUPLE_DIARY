@@ -136,6 +136,14 @@ textarea{min-height:230px;resize:vertical}
 .win .k{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);flex:none}
 .empty{color:var(--muted);margin:0}
 .saved{font-family:var(--f-mono);font-size:12px;color:var(--muted);min-height:1.2em;margin-top:auto}
+.rx{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.rx .rxl{font-size:12px;color:var(--muted);margin:0 0 8px}
+.rx .rxrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rx .rxb{font-size:20px;line-height:1;min-width:44px;min-height:44px;padding:6px 10px;border-radius:22px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer;font-family:inherit}
+.rx .rxb small{font-size:12px;margin-left:4px;font-weight:700}
+.rx .rxb.on{border-color:var(--ink);border-width:2px;background:var(--line)}
+.rx .rxadd{display:flex;gap:6px;margin-top:8px}
+.rx .rxadd input{flex:1;min-width:0;font-size:18px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
 .sealnote{font-size:13px;color:var(--muted);margin-top:auto}
 .list{display:grid;gap:8px}
 .row{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;align-items:center;gap:8px 18px;text-align:left;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;cursor:pointer;width:100%}
@@ -176,6 +184,9 @@ textarea{min-height:230px;resize:vertical}
 .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
 .mi{position:relative;min-width:0;border-radius:10px;overflow:hidden;background:var(--line)}
 .mi.v{grid-column:span 2}
+.mi.a{grid-column:1/-1;padding:10px;background:var(--line)}
+.mi.a .an{font-size:13px;margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:70px}
+.mi.a audio{display:block;width:100%}
 .mi img,.mi video{display:block;width:100%;height:100%;aspect-ratio:1/1;object-fit:cover;cursor:zoom-in;background:#000}
 .mi.v video{aspect-ratio:16/9;object-fit:contain;cursor:auto}
 .mdel{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:6px;padding:4px 9px;font-size:13px;cursor:pointer}
@@ -240,7 +251,7 @@ var monthSt=function(y,m){return span(iso(y,m,1),iso(y,m,dim(y,m)))};
 var written=function(e){return !!e&&!!(((e.text||'').trim())||((e.win||'').trim())||e.mood||(e.media&&e.media.length))};
 var badge=function(st){return '<span class="badge '+st+'">'+({open:'Open',sealed:'Sealed',upcoming:'Not yet open'}[st])+'</span>'};
 
-var S={view:'week',y:0,m:0,w:0,d:0,shell:null,dataYear:null,entries:{},me:null,taken:{},ready:false,authMode:'login',authBusy:false,authErr:'',online:true,loaded:false};
+var S={rx:{},view:'week',y:0,m:0,w:0,d:0,shell:null,dataYear:null,entries:{},me:null,taken:{},ready:false,authMode:'login',authBusy:false,authErr:'',online:true,loaded:false};
 var timers={},inflight={},dirty={},drafts={};
 
 function say(t){$('status').textContent=t||''}
@@ -306,6 +317,46 @@ function shiftWeek(dir){
 function buildWeekShell(){
   $('view').innerHTML='<section id="wkhead"></section><div class="pagerwrap"><div class="pager" id="pager"></div></div><div class="pagebar" id="pagebar"></div><div class="spread"><article class="leaf q" id="leaf-quadri"></article><article class="leaf o" id="leaf-olamide"></article></div>';
 }
+var RXQ=['\u2764\uFE0F','\uD83D\uDE02','\uD83D\uDC4D','\uD83E\uDD32','\uD83E\uDD70','\uD83D\uDE22','\uD83C\uDF89','\uD83D\uDD25','\uD83D\uDE0D','\uD83D\uDE4F','\uD83D\uDE2E','\uD83D\uDCAF'];
+function rxEmojis(text){
+  var segs=[];
+  if(window.Intl&&Intl.Segmenter){var it=new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(String(text||''));for(var x of it)segs.push(x.segment)}
+  else segs=Array.from(String(text||''));
+  return segs.filter(function(g){return /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200D|\uFE0F)+$/u.test(g)});
+}
+function rxFor(who){return S.rx[iso(S.y,S.m,S.d)+'|'+who]||{}}
+function rxInner(who){
+  var r=rxFor(who),mine=r[S.me]||[],other=ORDER.filter(function(k){return k!==S.me})[0],theirs=(r[other]||[]);
+  var all=RXQ.slice();
+  [mine,theirs].forEach(function(l){l.forEach(function(e){if(all.indexOf(e)<0)all.push(e)})});
+  var sub=who===S.me?'React to your own page':'React to '+PEOPLE[who].short+'\u2019s page';
+  var h='<p class="rxl">'+sub+(theirs.length&&who!==other?'':'')+(theirs.length?' \u00B7 '+PEOPLE[other].short+' reacted '+esc(theirs.join(' ')):'')+'</p><div class="rxrow">';
+  all.forEach(function(e){
+    var n=(mine.indexOf(e)>=0?1:0)+(theirs.indexOf(e)>=0?1:0),on=mine.indexOf(e)>=0;
+    h+='<button type="button" class="rxb'+(on?' on':'')+'" data-act="rx" data-who="'+who+'" data-e="'+esc(e)+'" aria-pressed="'+on+'" aria-label="React '+esc(e)+'">'+esc(e)+(n?'<small>'+n+'</small>':'')+'</button>';
+  });
+  h+='</div><div class="rxadd"><input type="text" id="rxin-'+who+'" maxlength="16" placeholder="Your own emoji" aria-label="Type your own emoji"><button type="button" class="btn" data-act="rxadd" data-who="'+who+'">Add</button></div>';
+  return h;
+}
+function paintRx(){
+  ORDER.forEach(function(k){
+    var el=$('rx-'+k);if(!el)return;
+    var a=document.activeElement;if(a&&el.contains(a)&&a.tagName==='INPUT')return;
+    el.innerHTML=rxInner(k);
+  });
+}
+async function setRx(who,list){
+  var date=iso(S.y,S.m,S.d),key=date+'|'+who,had=(S.rx[key]||{})[S.me];
+  S.rx[key]=Object.assign({},S.rx[key]);
+  if(list.length)S.rx[key][S.me]=list;else delete S.rx[key][S.me];
+  paintRx();
+  var r=await api('POST','/api/reactions',{date:date,target:who,emojis:list});
+  if(!r.ok){
+    S.rx[key]=Object.assign({},S.rx[key]);
+    if(had)S.rx[key][S.me]=had;else delete S.rx[key][S.me];
+    paintRx();
+  }
+}
 function leafHtml(who){
   var date=iso(S.y,S.m,S.d),e=S.entries[date+'_'+who],p=PEOPLE[who],isMe=S.me===who;
   var sealed=weekSt(S.y,S.m,S.w)==='sealed';
@@ -317,12 +368,14 @@ function leafHtml(who){
     h+='<div><label class="label" for="f-text">How the day went</label><textarea id="f-text" placeholder="Write today’s page here.">'+esc(e&&e.text)+'</textarea></div>';
     h+='<div><label class="label" for="f-win">Win of the day</label><input type="text" id="f-win" maxlength="200" placeholder="One thing you achieved or are proud of" value="'+esc(e&&e.win)+'"></div>';
     h+=mediaBlock(e,true);
+    h+='<div class="rx" id="rx-'+who+'">'+rxInner(who)+'</div>';
     h+='<div class="saved" id="saved"></div>';
   }else if(written(e)){
     if(e.mood)h+='<span class="moodtag">'+esc(e.mood)+'</span>';
     if((e.text||'').trim())h+='<p class="entry">'+esc(e.text)+'</p>';
     if((e.win||'').trim())h+='<div class="win"><span class="k">Win</span><span>'+esc(e.win)+'</span></div>';
     h+=mediaBlock(e,false);
+    h+='<div class="rx" id="rx-'+who+'">'+rxInner(who)+'</div>';
     if(sealed)h+='<div class="sealnote">Sealed with its week file. This page is kept as written.</div>';
   }else{
     if(sealed)h+='<p class="empty">No page was written for this day.</p>';
@@ -359,6 +412,7 @@ function updateWeek(){
     if(!el||skipLeaf(k))return;
     el.innerHTML=leafHtml(k);
   });
+  paintRx();
 }
 
 /* ---------- month view ---------- */
@@ -471,7 +525,7 @@ function renderAccount(){
   var h='<section><div class="fileline"><span class="mono">Account</span></div><h2>Your account</h2><p class="sub">Signed in as '+esc(PEOPLE[S.me].full)+'.</p></section><div class="spread">';
   h+='<form class="leaf" id="pwform" novalidate><h3>Change my password</h3>'+field('pw-cur','Current password','password','current-password')+field('pw-new','New password (8 or more characters)','password','new-password')+'<div><button class="btn primary" type="submit">Change password</button></div><p class="sealnote" id="pwmsg" role="status"></p></form>';
   h+='<form class="leaf" id="rsform" novalidate><h3>Set a new password for '+other.short+'</h3><p class="sealnote">Use this if '+other.short+' forgot their password. Confirm with your own password.</p>'+field('rs-cur','Your password','password','current-password')+field('rs-new',other.short+'\u2019s new password','password','off')+'<div><button class="btn primary" type="submit">Set their password</button></div><p class="sealnote" id="rsmsg" role="status"></p></form>';
-  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves the pages written in a year or a month as a PDF to keep or print, or as a plain text file. Both of your pages are included.</p><div class="navbtns"><button class="btn primary" data-act="export" data-kind="year" data-fmt="pdf">PDF: '+S.y+'</button><button class="btn primary" data-act="export" data-kind="month" data-fmt="pdf">PDF: '+MONTHS[S.m-1]+' '+S.y+'</button></div><div class="navbtns" style="margin-top:8px"><button class="btn" data-act="export" data-kind="year" data-fmt="txt">Text: '+S.y+'</button><button class="btn" data-act="export" data-kind="month" data-fmt="txt">Text: '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sub" style="margin-top:16px">The PDF shows each photo and a still picture from each video. To keep the original photos and videos, download them as one ZIP file.</p><div class="navbtns"><button class="btn" data-act="mediazip" data-kind="year">Photos and videos ZIP: '+S.y+'</button><button class="btn" data-act="mediazip" data-kind="month">Photos and videos ZIP: '+MONTHS[S.m-1]+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
+  h+='</div><section class="wins"><h3>Download the diary</h3><p class="sub">Saves the pages written in a year or a month as a PDF to keep or print, or as a plain text file. Both of your pages are included.</p><div class="navbtns"><button class="btn primary" data-act="export" data-kind="year" data-fmt="pdf">PDF: '+S.y+'</button><button class="btn primary" data-act="export" data-kind="month" data-fmt="pdf">PDF: '+MONTHS[S.m-1]+' '+S.y+'</button></div><div class="navbtns" style="margin-top:8px"><button class="btn" data-act="export" data-kind="year" data-fmt="txt">Text: '+S.y+'</button><button class="btn" data-act="export" data-kind="month" data-fmt="txt">Text: '+MONTHS[S.m-1]+' '+S.y+'</button></div><p class="sub" style="margin-top:16px">The PDF shows each photo, a still picture from each video, and a note for each audio file. To keep the original photos, videos and audio, download them as one ZIP file.</p><div class="navbtns"><button class="btn" data-act="mediazip" data-kind="year">Photos, videos and audio ZIP: '+S.y+'</button><button class="btn" data-act="mediazip" data-kind="month">Photos, videos and audio ZIP: '+MONTHS[S.m-1]+'</button></div><p class="sealnote" id="exmsg" role="status"></p></section>';
   h+='<section class="wins"><h3>Daily reminder</h3><p class="sub">A notification around 8 pm Lagos time, sent only if you have not written that day\u2019s page.</p><div class="navbtns" id="pushbtns"></div><p class="sealnote" id="pushmsg" role="status"></p></section>';
   $('view').innerHTML=h;
   pushUi();
@@ -570,7 +624,8 @@ async function exportDiary(kind,fmt){
         out+='-- '+PEOPLE[e.who].full+(e.mood?' ('+e.mood+')':'')+'\n';
         if((e.text||'').trim())out+=e.text.trim()+'\n';
         if((e.win||'').trim())out+='Win: '+e.win.trim()+'\n';
-        if(e.media&&e.media.length)out+='Attachments: '+e.media.map(function(m,i){return mediaFileName(e,m,i,m.mime||'')}).join(', ')+' (download them with the Photos and videos ZIP)\n';
+        var rr=S.rx[e.date+'|'+e.who]||{},rl=Object.keys(rr).map(function(k){return PEOPLE[k].short+': '+rr[k].join(' ')});if(rl.length)out+='Reactions: '+rl.join('  ')+'\n';
+        if(e.media&&e.media.length)out+='Attachments: '+e.media.map(function(m,i){return mediaFileName(e,m,i,m.mime||'')}).join(', ')+' (download them with the Photos, videos and audio ZIP)\n';
         out+='\n';
       });
       saveFile(new Blob([out],{type:'text/plain;charset=utf-8'}),base+'.txt');
@@ -657,10 +712,12 @@ async function makePdf(rows,period){
           var r=await fetchMedia(m),bm=await createImageBitmap(r.blob);
           placeBox(bm,bm.width,bm.height,'Photo: '+label,false);
         }catch(x){placeBox(null,textW,200,'Photo could not be loaded: '+label,false)}
+      }else if(m.type==='audio'){
+        placeBox(null,textW,120,'Audio: '+label+' - the audio file is in the Photos, videos and audio ZIP',false);
       }else{
         var f=await videoFrame(m);
-        if(f)placeBox(f.img,f.w,f.h,'Video (first frame): '+label+' - the full video is in the Photos and videos ZIP',true);
-        else placeBox(null,textW,220,'Video: '+label+' - the full video is in the Photos and videos ZIP',true);
+        if(f)placeBox(f.img,f.w,f.h,'Video (first frame): '+label+' - the full video is in the Photos, videos and audio ZIP',true);
+        else placeBox(null,textW,220,'Video: '+label+' - the full video is in the Photos, videos and audio ZIP',true);
       }
     }
   }
@@ -675,7 +732,9 @@ async function makePdf(rows,period){
     draw(PEOPLE[e.who].full+(e.mood?'  ·  '+e.mood:''),'700 29px '+FONT,e.who==='quadri'?'#0f6b45':'#2b54a6');y+=46;
     if((e.text||'').trim())wrap(e.text.trim(),'400 31px '+FONT).forEach(function(l){need(46);if(l)draw(l,'400 31px '+FONT,'#12201a');y+=46});
     if((e.win||'').trim()){y+=6;wrap('Win: '+e.win.trim(),'italic 400 29px '+FONT).forEach(function(l){need(44);if(l)draw(l,'italic 400 29px '+FONT,'#9a6a0c');y+=44})}
-    if(e.media&&e.media.length){y+=16;var pm=$('exmsg');if(pm)pm.textContent='Adding photos and videos…';await drawMedia(e)}
+    var rr2=S.rx[e.date+'|'+e.who]||{},rl2=Object.keys(rr2).map(function(k){return PEOPLE[k].short+' '+rr2[k].join(' ')});
+    if(rl2.length){y+=8;wrap('Reactions: '+rl2.join('   '),'400 29px '+FONT).forEach(function(l){need(44);if(l)draw(l,'400 29px '+FONT,'#5a6a62');y+=44})}
+    if(e.media&&e.media.length){y+=16;var pm=$('exmsg');if(pm)pm.textContent='Adding photos, videos and audio…';await drawMedia(e)}
     y+=34;
   }
   pages.push(cv);
@@ -746,7 +805,7 @@ async function pull(){
     if(r.ok&&y===S.y){
       var o=r.data.entries||{};
       Object.keys(drafts).forEach(function(date){var dr=drafts[date];if(dr&&dr.pending){o[date+'_'+dr.who]=dr}});
-      S.entries=o;S.loaded=true;cacheWrite(y,r.data.entries);setOnline(true);updateView();
+      S.rx=r.data.reactions||{};S.entries=o;S.loaded=true;cacheWrite(y,r.data.entries);setOnline(true);updateView();
     }
   }catch(e){setOnline(false)}
   finally{pulling=false}
@@ -768,7 +827,7 @@ function openWeek(y,m,w){
 }
 
 /* ---------- fetching and zipping media ---------- */
-var EXT={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','video/mp4':'mp4','video/quicktime':'mov','video/webm':'webm'};
+var EXT={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','video/mp4':'mp4','video/quicktime':'mov','video/webm':'webm','audio/mpeg':'mp3','audio/mp4':'m4a','audio/x-m4a':'m4a','audio/aac':'aac','audio/wav':'wav','audio/x-wav':'wav','audio/ogg':'ogg','audio/webm':'weba','audio/opus':'opus','audio/flac':'flac'};
 function findMedia(id){
   var ks=Object.keys(S.entries);
   for(var i=0;i<ks.length;i++){var e=S.entries[ks[i]];if(e&&e.media)for(var j=0;j<e.media.length;j++)if(e.media[j].id===id)return {m:e.media[j],e:e}}
@@ -787,7 +846,7 @@ async function fetchMedia(m){
   return {blob:new Blob(parts,{type:mime}),mime:mime,parts:parts};
 }
 function mediaFileName(e,m,i,mime){
-  var ext=EXT[mime]||EXT[m.mime]||'bin',base=String(m.name||'').replace(/\.[^.]*$/,'').replace(/[^\w\- ]+/g,'').trim().slice(0,40)||(m.type==='video'?'video':'photo');
+  var ext=EXT[mime]||EXT[m.mime]||'bin',base=String(m.name||'').replace(/\.[^.]*$/,'').replace(/[^\w\- ]+/g,'').trim().slice(0,40)||(m.type==='video'?'video':m.type==='audio'?'audio':'photo');
   return e.date+'_'+e.who+'_'+(i+1)+'_'+base+'.'+ext;
 }
 var CRC=null;
@@ -827,7 +886,7 @@ async function saveOne(id,btn){
 async function exportMediaZip(kind){
   var el=$('exmsg'),rows=exportRows(kind).filter(function(e){return e.media&&e.media.length});
   var items=[];rows.forEach(function(e){e.media.forEach(function(m,i){items.push({e:e,m:m,i:i})})});
-  if(!items.length){el.textContent='No photos or videos in that period yet.';return}
+  if(!items.length){el.textContent='No photos, videos or audio in that period yet.';return}
   var total=items.reduce(function(a,x){return a+x.m.size},0);
   if(total>400*1024*1024){el.textContent='That is '+Math.round(total/1048576)+' MB, too much for one file. Choose a single month.';return}
   var files=[];
@@ -845,19 +904,21 @@ async function exportMediaZip(kind){
 }
 
 /* ---------- photos and videos ---------- */
-var MAXV=50*1024*1024,MAXI=10*1024*1024,OKMIME=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm'];
+var MAXV=50*1024*1024,MAXI=10*1024*1024,MAXA=25*1024*1024,OKMIME=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm','audio/mpeg','audio/mp4','audio/x-m4a','audio/aac','audio/wav','audio/x-wav','audio/ogg','audio/webm','audio/opus','audio/flac'],AEXT={mp3:'audio/mpeg',m4a:'audio/mp4',aac:'audio/aac',wav:'audio/wav',ogg:'audio/ogg',oga:'audio/ogg',opus:'audio/opus',flac:'audio/flac',weba:'audio/webm'};
+function fixMime(f){var m=f.type||'',x=(String(f.name||'').split('.').pop()||'').toLowerCase();if(m==='audio/mp3'||m==='audio/x-mpeg')m='audio/mpeg';if((!m||m==='application/octet-stream')&&AEXT[x])m=AEXT[x];return m}
 function mediaBlock(e,editable){
   var list=(e&&e.media)||[],h='';
   if(list.length){
     h+='<div class="mgrid">'+list.map(function(m){
       var src='/api/media?id='+encodeURIComponent(m.id);
       var del=(editable?'<button type="button" class="mdel" data-act="mediadel" data-id="'+esc(m.id)+'" aria-label="Remove">Remove</button>':'')+'<button type="button" class="msave" data-act="mediasave" data-id="'+esc(m.id)+'" data-date="'+esc(e.date)+'" data-who="'+esc(e.who)+'" aria-label="Save to this device">Save</button>';
+      if(m.type==='audio')return '<div class="mi a"><p class="an">'+esc(m.name||'Audio')+'</p><audio controls preload="none" src="'+src+'"></audio>'+del+'</div>';
       if(m.type==='video')return '<div class="mi v"><video controls playsinline preload="metadata" src="'+src+'"></video>'+del+'</div>';
       return '<div class="mi"><img loading="lazy" src="'+src+'" alt="'+esc(m.name||'Photo')+'" data-act="viewimg" data-src="'+src+'">'+del+'</div>';
     }).join('')+'</div>';
   }
   if(editable){
-    h+='<div><input type="file" id="f-media" class="vh" accept="image/*,video/*" multiple><label class="btn" for="f-media" style="display:inline-block">Add photo or video</label> <span class="sealnote" id="mediamsg" role="status">'+esc(S.mediaMsg||'')+'</span></div>';
+    h+='<div><input type="file" id="f-media" class="vh" accept="image/*,video/*,audio/*,.mp3,.m4a,.aac,.wav,.ogg,.opus,.flac" multiple><label class="btn" for="f-media" style="display:inline-block">Add photo, video or audio</label> <span class="sealnote" id="mediamsg" role="status">'+esc(S.mediaMsg||'')+'</span></div>';
   }
   return h;
 }
@@ -885,21 +946,21 @@ async function uploadFiles(files){
   if(!S.me||!files||!files.length)return;
   var date=iso(S.y,S.m,S.d),list=Array.prototype.slice.call(files);
   for(var i=0;i<list.length;i++){
-    var f=list[i],blob=f,mime=f.type,tag='('+(i+1)+' of '+list.length+') ';
+    var f=list[i],blob=f,mime=fixMime(f),tag='('+(i+1)+' of '+list.length+') ';
     try{
       if(/^image\//.test(mime)&&mime!=='image/gif'){
         mediaSay(tag+'Preparing photo\u2026');
         try{blob=await compressImage(f);mime='image/jpeg'}catch(e){blob=f}
       }
-      if(OKMIME.indexOf(mime)<0){mediaSay('That file type is not supported. Use JPG, PNG, WebP, GIF, MP4, MOV or WebM.');continue}
-      var isV=/^video\//.test(mime);
-      if(blob.size>(isV?MAXV:MAXI)){mediaSay(isV?'That video is over 50 MB. Trim or compress it first.':'That photo is over 10 MB.');continue}
+      if(OKMIME.indexOf(mime)<0){mediaSay('That file type is not supported. Use JPG, PNG, WebP, GIF, MP4, MOV, WebM, MP3, M4A, AAC, WAV, OGG or FLAC.');continue}
+      var isV=/^video\//.test(mime),isA=/^audio\//.test(mime);
+      if(blob.size>(isA?MAXA:isV?MAXV:MAXI)){mediaSay(isA?'That audio file is over 25 MB.':isV?'That video is over 50 MB. Trim or compress it first.':'That photo is over 10 MB.');continue}
       await waitSaved(date);
       var r=await api('POST','/api/media?action=init',{date:date,mime:mime,size:blob.size,name:f.name||''});
       if(!r.ok){mediaSay(r.data&&r.data.error||'Could not start the upload.');continue}
       var id=r.data.id,CH=r.data.chunk,total=r.data.chunks;
       for(var n=0;n<total;n++){
-        mediaSay(tag+'Uploading '+(isV?'video':'photo')+' '+Math.round(n/total*100)+'%');
+        mediaSay(tag+'Uploading '+(isA?'audio':isV?'video':'photo')+' '+Math.round(n/total*100)+'%');
         var res=await fetch('/api/media?id='+id+'&n='+n,{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream'},body:blob.slice(n*CH,Math.min(blob.size,(n+1)*CH))});
         if(!res.ok){var j={};try{j=await res.json()}catch(e){}throw new Error(j.error||'Upload failed')}
       }
@@ -1059,6 +1120,8 @@ document.addEventListener('click',function(ev){
       if(S.y===t.y&&S.m===t.m)openWeek(S.y,S.m,Math.ceil(t.d/7)); else openWeek(S.y,S.m,1);
     }else setView(v);
   }
+  else if(a==='rx'){var rw=b.dataset.who,re=b.dataset.e,cur=((rxFor(rw))[S.me]||[]).slice(),ix=cur.indexOf(re);if(ix>=0)cur.splice(ix,1);else if(cur.length<8)cur.push(re);setRx(rw,cur)}
+  else if(a==='rxadd'){var rw2=b.dataset.who,inp=$('rxin-'+rw2),got=rxEmojis(inp&&inp.value),cur2=((rxFor(rw2))[S.me]||[]).slice();got.forEach(function(g){if(cur2.indexOf(g)<0&&cur2.length<8)cur2.push(g)});if(inp)inp.value='';if(got.length)setRx(rw2,cur2)}
   else if(a==='page'){flushPendings();S.d=+b.dataset.d;S.shell='week';updateView()}
   else if(a==='prevWeek'){var p=shiftWeek(-1);openWeek(p.y,p.m,p.w)}
   else if(a==='nextWeek'){var n=shiftWeek(1);openWeek(n.y,n.m,n.w)}
