@@ -22,7 +22,13 @@ module.exports = async function (req, res) {
           Object.keys(f.days).forEach(function (date) { out[date + '_' + who] = Object.assign({ date: date, who: who }, f.days[date]); });
         });
       }));
-      return L.json(res, 200, { entries: out, today: today, who: s.who });
+      const rx = {};
+      await Promise.all(WHO.map(async function (who) {
+        const f = await L.store.readJson('reactions/' + year + '/' + who + '.json');
+        if (!f || !f.r) return;
+        Object.keys(f.r).forEach(function (k) { (rx[k] = rx[k] || {})[who] = f.r[k]; });
+      }));
+      return L.json(res, 200, { entries: out, reactions: rx, today: today, who: s.who });
     }
 
     if (req.method === 'PUT') {
